@@ -1,5 +1,5 @@
 {
-module TypelessArithmeticsParser ( parseTypelessArithmetics ) where
+module TypelessArithmeticsParser ( parse ) where
 
 import TypelessArithmeticsLexer
 import TypelessArithmeticsAST
@@ -35,4 +35,6 @@ Term	: succ '(' Term ')'				{ TmSucc $3 }
 {
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
+
+parse = parseTypelessArithmetics.alexScanTokens
 }
