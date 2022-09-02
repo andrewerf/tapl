@@ -4,14 +4,22 @@ module TypelessLambdaLexer where
 
 %wrapper "basic"
 
+$digit = [0-9]
+$alpha = [a-zA-Z]
+@id = ($alpha | \_) ($alpha | $digit | \_ | \' | \?)*
+
 tokens :-
 
 $white+		;
 \\				{ \s -> TkAbs }
-[a-zA-Z]		{ \s -> TkVar s }
+let				{ \_ -> TkLet }
+=				{ \_ -> TkEq }
+in				{ \_ -> TkIn }
+$alpha [$alpha $digit \_ \']*
+				{ \s -> TkVar s }
 \( 				{ \_ -> TkLeftPar }
 \) 				{ \_ -> TkRightPar }
-.				{ \_ -> TkDot }
+\.				{ \_ -> TkDot }
 
 {
 
@@ -20,7 +28,10 @@ data Token =
   TkVar String |
   TkLeftPar |
   TkRightPar |
-  TkDot
+  TkDot |
+  TkLet |
+  TkEq |
+  TkIn
   deriving ( Eq, Show )
 
 tkVarName :: Token -> String

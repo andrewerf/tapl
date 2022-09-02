@@ -7,7 +7,8 @@ import Data.List ( elemIndex )
 data TermSimple =
   TmsVar String |
   TmsAbs String TermSimple |
-  TmsApp TermSimple TermSimple
+  TmsApp TermSimple TermSimple |
+  TmsLet String TermSimple TermSimple
   deriving ( Eq, Show )
 
 data Term =
@@ -19,6 +20,12 @@ data Term =
 type Context = [String]
 
 data TermWithContext = TermWithContext Context Term
+
+desugar :: TermSimple -> TermSimple
+desugar ( TmsLet s t1 t2 ) = TmsApp ( TmsAbs s ( desugar t2 ) ) ( desugar t1 )
+desugar ( TmsAbs s t ) = TmsAbs s ( desugar t )
+desugar ( TmsApp t1 t2 ) = TmsApp ( desugar t1 ) ( desugar t2 )
+desugar ( TmsVar s ) = TmsVar s
 
 extractTerm :: TermWithContext -> Term
 extractTerm ( TermWithContext _ term ) = term
