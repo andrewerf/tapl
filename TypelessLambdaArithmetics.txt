@@ -1,0 +1,36 @@
+true = \a.\b.a;
+false = \a.\b.b;
+test = \l.\m.\n. l m n;
+and = \b.\c. b c false;
+
+mk_pair = \a.\b.\t. test t a b;
+fst = \p. p true;
+snd = \p. p false;
+
+c0 = \s.\z. z;
+iszero = \f. f ( \x. false ) true;
+scc = \n.\s.\z. s ( n s z );
+c1 = scc c0;
+c2 = scc c1;
+c3 = scc c2;
+c4 = scc c3;
+c5 = scc c4;
+c6 = scc c5;
+c7 = scc c6;
+c8 = scc c7;
+c9 = scc c8;
+c10 = scc c9;
+
+plus = \m.\n.\s.\z. m s ( n s z );
+times = \m.\n. m ( plus n ) c0;
+zz = mk_pair c0 c0;
+ss = \p.mk_pair ( snd p ) ( plus c1 ( snd p ) );
+prd = \m. fst ( m ss zz );
+equal = \m.\n. and ( iszero ( m prd n ) ) ( iszero ( n prd m ) );
+
+
+fix = \f.( \x. f ( \y. x x y ) ) ( \x. f ( \y. x x y ) );
+g = \f.\n. test ( iszero n ) ( \x. c1 ) ( \x. times n ( f ( prd n ) ) ) c0;
+fact = fix g
+in
+equal ( fact c5 ) ( plus ( times c10 c2 ) ( times c10 c10 ) )
