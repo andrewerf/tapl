@@ -12,7 +12,6 @@ tokens :-
 
 $white+		;
 \\				{ \s -> TkAbs }
-let				{ \_ -> TkLet }
 =				{ \_ -> TkEq }
 in				{ \_ -> TkIn }
 $alpha [$alpha $digit \_ \']*
@@ -20,6 +19,7 @@ $alpha [$alpha $digit \_ \']*
 \( 				{ \_ -> TkLeftPar }
 \) 				{ \_ -> TkRightPar }
 \.				{ \_ -> TkDot }
+\;				{ \_ -> TkSemicolon }
 
 {
 
@@ -29,9 +29,9 @@ data Token =
   TkLeftPar |
   TkRightPar |
   TkDot |
-  TkLet |
   TkEq |
-  TkIn
+  TkIn |
+  TkSemicolon
   deriving ( Eq, Show )
 
 tkVarName :: Token -> String

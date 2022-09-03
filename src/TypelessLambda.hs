@@ -29,8 +29,8 @@ eval1 :: Term -> Maybe Term
 eval1 ( TmApp ( TmAbs _ tailTerm ) term )
   | isval term = Just $ shift0 ( subst tailTerm 0 ( shift0 term 1 ) ) ( -1 )
 eval1 ( TmApp term1 term2 )
-  | isval term1 = TmApp term1 <$> eval1 term2
-  | isval term2 = ( \term1' -> TmApp term1' term2 ) <$> eval1 term1
+  | not $ isval term1 = ( \term1' -> TmApp term1' term2 ) <$> eval1 term1
+  | not $ isval term2 = TmApp term1 <$> eval1 term2
 eval1 _ = Nothing
 
 eval :: Term -> Maybe Term

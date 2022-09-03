@@ -45,7 +45,7 @@ newVarName context varName
 instance Show TermWithContext where
   show ( TermWithContext context term ) =
     case term of
-      TmAbs varName tailTerm -> "\\" ++ varName' ++ "." ++ show ( TermWithContext context' tailTerm )
+      TmAbs varName tailTerm -> "(\\" ++ varName' ++ "." ++ show ( TermWithContext context' tailTerm ) ++ ")"
         where ( context', varName' ) = newVarName context varName
       TmApp term1 term2 -> show ( TermWithContext context term1 ) ++ " " ++ show ( TermWithContext context term2 )
       TmVar index -> context !! index
