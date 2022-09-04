@@ -6,7 +6,7 @@ import TypelessLambdaParser ( parse )
 import System.Environment.Blank ( getArgs )
 
 
-processString :: Context -> String -> Maybe Term
+processString :: Context -> String -> TermEither
 processString ctx s = ( removeNames ctx.desugar.parse ) s >>= eval
 
 main :: IO ()
