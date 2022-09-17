@@ -1,20 +1,20 @@
 module Main (main) where
 
-import TypelessLambda
-import TypelessLambdaAST
-import TypelessLambdaParser ( parse )
+import SimpleLambda
+import SimpleLambdaAST
+import SimpleLambdaParser ( parse )
 import System.Environment.Blank ( getArgs )
 
 
-processString :: Context -> String -> TermEither
-processString ctx s = ( removeNames ctx.desugar.parse ) s >>= eval
+processString :: [(String, Type)] -> String -> TermEither
+processString ctx s = ( desugarAndRemoveNames ctx.parse ) s >>= eval
 
 main :: IO ()
 main = do
   args <- getArgs
-  let ctx = tail args
+  let ctx = [( "a", TypeVar "A" ), ( "b", TypeVar "A" )] :: [(String, Type)]
   fileContent <- readFile $ head args
-  print $ TermWithContext ctx <$>  processString ctx fileContent
+  print $ TermWithNamingContext ( map fst ctx ) <$>  processString ctx fileContent
 
 
 --main :: IO ()

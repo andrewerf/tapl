@@ -1,43 +1,49 @@
 {
-module TypelessLambdaParser ( parse ) where
+module SimpleLambdaParser ( parse ) where
 
-import TypelessLambdaLexer
-import TypelessLambdaAST
+import SimpleLambdaLexer
+import SimpleLambdaAST
 
 }
 
-%name parseTypelessLambda
+%name parseSimpleLambda
 %tokentype { Token }
 %error { parseError }
 
 %token
-Abs			{ TkAbs }
-Var			{ TkVar _ }
+abs			{ TkAbs }
+var			{ TkVar _ }
 '.'			{ TkDot }
 '('			{ TkLeftPar }
 ')'			{ TkRightPar }
 '='			{ TkEq }
 In			{ TkIn }
 ';'			{ TkSemicolon }
+':'			{ TkColon }
+'->'		{ TkArrow }
 
 %%
 
-LetExpr	: Var '=' Terms ';' LetExpr
+LetExpr	: var '=' Terms ';' LetExpr
 								{ TmsLet ( tkVarName $1 ) $3 $5 }
-		| Var '=' Terms In Terms
+		| var '=' Terms In Terms
 								{ TmsLet ( tkVarName $1 ) $3 $5 }
 		| Terms					{ $1 }
 
 Terms	: Term					{ $1 }
 		| Terms Term			{ TmsApp $1 $2 }
 
-Term	: Var					{ TmsVar ( tkVarName $1 ) }
-		| Abs Var '.' Terms		{ TmsAbs ( tkVarName $2 ) $4 }
+Type	: var					{ TypeVar ( tkVarName $1 ) }
+		| var '->' Type			{ TypeArrow ( TypeVar ( tkVarName $1 ) ) $3 }
+
+Term	: var					{ TmsVar ( tkVarName $1 ) }
+		| abs var ':' Type '.' Terms
+								{ TmsAbs ( tkVarName $2 ) $4 $6 }
 		| '(' Terms ')'			{ $2 }
 
 {
 parseError :: [Token] -> a
 parseError tokens = error $ "Parse error: " ++ show tokens
 
-parse = parseTypelessLambda.alexScanTokens
+parse = parseSimpleLambda.alexScanTokens
 }

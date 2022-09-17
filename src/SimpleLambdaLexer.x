@@ -1,5 +1,5 @@
 {
-module TypelessLambdaLexer where
+module SimpleLambdaLexer where
 }
 
 %wrapper "basic"
@@ -20,6 +20,8 @@ $alpha [$alpha $digit \_ \']*
 \) 				{ \_ -> TkRightPar }
 \.				{ \_ -> TkDot }
 \;				{ \_ -> TkSemicolon }
+\:				{ \_ -> TkColon }
+\->				{ \_ -> TkArrow }
 
 {
 
@@ -31,7 +33,9 @@ data Token =
   TkDot |
   TkEq |
   TkIn |
-  TkSemicolon
+  TkSemicolon |
+  TkColon |
+  TkArrow
   deriving ( Eq, Show )
 
 tkVarName :: Token -> String
