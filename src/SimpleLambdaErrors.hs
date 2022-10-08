@@ -21,30 +21,28 @@ class ShowTree t where
 
 -- Contains all the type derivation tree
 -- from top to error
-data TypeError termType
-  = Show termType => AppTypeError {
-    leftTerm    :: termType,
-    rightTerm   :: termType,
-    leftType    :: Either ( TypeError termType ) Type,
-    rightType   :: Either ( TypeError termType ) Type
+data TypeError
+  = AppTypeError {
+    leftTerm    :: TermWithContext,
+    rightTerm   :: TermWithContext,
+    leftType    :: Either TypeError Type,
+    rightType   :: Either TypeError Type
   }
-  | Show termType => AbsTypeError {
+  | AbsTypeError {
     varName     :: String,
-    tailTerm    :: TypeError termType
+    tailTerm    :: TypeError
   }
   | VarTypeError {
     varIndex    :: Maybe Int,
     context     :: Context
   }
 
-type TypeErrorTerm = TypeError Term
-
 data DesugarError
   = AppDesugarError {
     leftTermSimple  :: TermSimple,
     rightTermSimple :: TermSimple,
-    leftTerm        :: Either DesugarError Term,
-    rightTerm       :: Either DesugarError Term
+    leftTerm        :: Either DesugarError TermWithContext,
+    rightTerm       :: Either DesugarError TermWithContext
   }
   | VarDesugarError {
     varName     :: String,
@@ -52,15 +50,15 @@ data DesugarError
   }
   | AbsDesugarError {
     varName     :: String,
-    tailTerm    :: Either DesugarError Term
+    tailTerm    :: Either DesugarError TermWithContext
   }
   | LetDesugarError {
     varName         :: String,
     headTermSimple  :: TermSimple,
     tailTermSimple  :: TermSimple,
-    headTerm        :: Either DesugarError Term,
-    tailTerm        :: Either DesugarError Term,
-    headType        :: Either TypeErrorTerm Type
+    headTerm        :: Either DesugarError TermWithContext,
+    tailTerm        :: Either DesugarError TermWithContext,
+    headType        :: Either TypeError Type
   }
 
 showContext :: Context -> String
@@ -70,7 +68,7 @@ showEither :: forall a e.Show a => ( e -> String ) -> Either e a -> String
 showEither _ ( Right t ) = show t
 showEither showNext ( Left err ) = showNext err
 
-instance Show termType => ShowTree ( TypeError termType ) where
+instance ShowTree TypeError where
   toLines showNext t =
     case t of
       VarTypeError{varIndex = varIndex, context = context} -> ["Var error",
@@ -100,7 +98,7 @@ instance ShowTree DesugarError where
        "Head term: " ++ showEither showNext headTerm, "Tail term: " ++ showEither showNext tailTerm, "Head type: " ++ showEither showNext tailTerm]
 
 
-instance Show termType => Show ( TypeError termType ) where
+instance Show TypeError where
   show = showTree 1
 
 instance Show DesugarError where

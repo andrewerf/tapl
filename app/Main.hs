@@ -11,9 +11,9 @@ import System.Environment.Blank ( getArgs )
 processString :: Context -> String -> Either String Term
 processString ctx s = case ( maybeDesugared, maybeType ) of
   ( Left err, _ ) -> Left $ show err
-  ( _, Left err ) -> Left err 
+  ( _, Left err ) -> Left err
   ( Right term, _ ) -> eval term
-  where 
+  where
     maybeDesugared = ( desugarAndRemoveNames ctx.parse ) s
     maybeType = case maybeDesugared of
       ( Left err ) ->  Left $ show err
