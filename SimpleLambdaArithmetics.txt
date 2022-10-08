@@ -1,0 +1,6 @@
+true = \a:A.\b:A.a;
+false = \a:A.\b:A.b;
+and = \x:A->A->A.\y:A->A->A.\a:A.\b:A.y ( x a b ) b
+
+in
+( and true true ) a aa

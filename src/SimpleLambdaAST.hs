@@ -47,7 +47,7 @@ instance Show TermWithContext where
       TmAbs varName varType tailTerm -> "(\\" ++ varName' ++ ":" ++ show varType ++ "." ++ show ( TermWithContext context' tailTerm ) ++ ")"
         where
           ( context', varName' ) = newVarWithType context varName varType
-      TmApp term1 term2 -> show ( TermWithContext context term1 ) ++ " " ++ show ( TermWithContext context term2 )
+      TmApp term1 term2 -> "(" ++ show ( TermWithContext context term1 ) ++ " " ++ show ( TermWithContext context term2 ) ++ ")"
       TmVar index -> getNamingContext context !! index
     where
       newVarWithType :: Context -> String -> Type -> ( Context, String )
