@@ -8,8 +8,8 @@ module Lambda2.Core.AST
   Term(..),
   Context,
   ContextMember,
-  shiftType,
   shiftType0,
+  shift0,
   getVarIndex,
   getType,
   getVar,
@@ -88,11 +88,8 @@ getName ( CmType s ) = s
 getNames :: Context -> [String]
 getNames ( Context ctx ) = map getName ctx
 
+
 -- Shifts type preserving bound variables
-shiftType0 :: Int -> Type -> Type
-shiftType0 = shiftType 0
-
-
 --          cutoff  shift
 shiftType :: Int -> Int -> Type -> Type
 shiftType c s = \case
@@ -100,6 +97,25 @@ shiftType c s = \case
   TpArrow tp1 tp2 -> TpArrow ( shiftType c s tp1 ) ( shiftType c s tp2 )
   TpPoly name tp -> TpPoly name $ shiftType ( c + 1 ) s tp
 
+
+shiftType0 :: Int -> Type -> Type
+shiftType0 = shiftType 0
+
+
+-- Shifts term (and types in it) preserving bound variables
+--      cutoff  shift
+shift :: Int -> Int -> Term -> Term
+shift c s = \case
+  TmVar k
+    | k < c -> TmVar k
+    | otherwise -> TmVar ( k + s )
+  TmAbs varName varType tailTerm -> TmAbs varName ( shiftType c s varType ) ( shift ( c + 1 ) s tailTerm )
+  TmApp t1 t2 -> TmApp ( shift c s t1 ) ( shift c s t2 )
+  TmPoly typeVarName tm -> TmPoly typeVarName ( shift ( c + 1 ) s tm )
+  TmType tp -> TmType ( shiftType c s tp )
+
+shift0 :: Int -> Term -> Term
+shift0 = shift 0
 
 getVarIndex :: Context -> String -> Maybe Int
 getVarIndex ctx varName = elemIndex varName $ getNames ctx

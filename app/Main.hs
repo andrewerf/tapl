@@ -24,10 +24,11 @@ processString ctx s = case ( maybeDesugared, maybeType ) of
 -- Γ = β:*, γ:*, b:β, c:γ
 testContext :: Context
 testContext =
-  extendContextWithVar "c" ( TpVar 1 ) $
-    extendContextWithVar "b" ( TpVar 1 ) $
-      extendContextWithTypeVar "γ" $
-        extendContextWithTypeVar "β" mempty
+  extendContextWithVar "bb" ( TpVar 3 ) $
+    extendContextWithVar "c" ( TpVar 1 ) $
+      extendContextWithVar "b" ( TpVar 1 ) $
+        extendContextWithTypeVar "γ" $
+          extendContextWithTypeVar "β" mempty
 
 main :: IO ()
 main = do

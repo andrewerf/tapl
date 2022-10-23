@@ -38,12 +38,14 @@ Terms	: Term					{ $1 }
 
 Type	: type_var			    { TpsVar ( tkVarName $1 ) }
 		| type_var '->' Type	{ TpsArrow ( TpsVar ( tkVarName $1 ) ) $3 }
+        | '@' type_var '.' Type { TpsPoly ( tkVarName $2 ) $4 }
+        | '(' Type ')'          { $2 }
 
 Term	: var					{ TmsVar ( tkVarName $1 ) }
         | Type                  { TmsType $1 }
-		| abs var ':' Type '.' Term
+		| abs var ':' Type '.' Terms
 								{ TmsAbs ( tkVarName $2 ) $4 $6 }
-        | abs type_var ':' '*' '.' Term
+        | abs type_var ':' '*' '.' Terms
                                 { TmsPoly ( tkVarName $2 ) $6 }
 		| '(' Terms ')'			{ $2 }
 

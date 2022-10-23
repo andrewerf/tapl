@@ -35,8 +35,11 @@ data ErrorExprStructure termT typeT = ErrorExprStructure {
   types :: [typeT]
 } deriving ( Eq )
 
-instance forall termT typeT. Show ( ErrorExprStructure termT typeT ) where
-  show ( ErrorExprStructure knd ctx _ _ ) = show knd ++ "\ncontext: " ++ show ctx
+instance Show ( ErrorExprStructure TermSimple TypeSimple ) where
+  show ( ErrorExprStructure knd ctx tms tps ) = show knd ++ "\ncontext: " ++ show ctx ++ ", terms: " ++ show tms ++ ", types:" ++ show tps
+  
+instance Show ( ErrorExprStructure Term Type ) where
+  show ( ErrorExprStructure knd ctx tms tps ) = show knd ++ "\ncontext: " ++ show ctx ++ ", terms: " ++ show tms ++ ", types:" ++ show tps
 
 
 data Error expr next =
