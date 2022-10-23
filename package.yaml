@@ -23,6 +23,8 @@ dependencies:
 - array
 - relude
 - data-default
+- free
+- deriving-compat
 
 ghc-options:
 - -Wall
@@ -35,6 +37,7 @@ ghc-options:
 - -Wpartial-fields
 - -Wredundant-constraints
 - -O2
+- -Werror=incomplete-patterns
 
 library:
   source-dirs: src
@@ -63,3 +66,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - tapl
+    - HUnit
+    - hspec
+    - hspec-contrib

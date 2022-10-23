@@ -1,31 +1,38 @@
 module Main (main) where
 
-import SimpleLambda
-import SimpleLambdaAST
-import SimpleLambdaPreprocess
-import SimpleLambdaTypes
-import SimpleLambdaParser ( parse )
-import System.Environment.Blank ( getArgs )
+import Lambda2.Core.AST
+import Lambda2.Core.Core
+import Lambda2.Core.Typing
+import Lambda2.Core.Preprocess
+import Lambda2.Parsing.Parser
+import Relude.Lifted.Env ( getArgs )
+import Control.Applicative ( liftA2 )
 
-
-processString :: Context -> String -> Either String Term
+processString :: Context -> String -> Either String ( Term, Type )
 processString ctx s = case ( maybeDesugared, maybeType ) of
   ( Left err, _ ) -> Left $ show err
   ( _, Left err ) -> Left err
-  ( Right term, _ ) -> eval term
+  ( Right term, _ ) -> liftA2 (,) ( eval term ) maybeType
   where
-    maybeDesugared = ( desugarAndRemoveNames ctx.parse ) s
+    maybeDesugared = ( desugar ctx.parse ) s
     maybeType = case maybeDesugared of
       ( Left err ) ->  Left $ show err
       ( Right term ) -> case typeof ctx term of
         ( Left err ) -> Left $ show err
         ( Right tp ) -> Right tp
 
+-- Γ = β:*, γ:*, b:β, c:γ
+testContext :: Context
+testContext =
+  extendContextWithVar "c" ( TpVar 1 ) $
+    extendContextWithVar "b" ( TpVar 1 ) $
+      extendContextWithTypeVar "γ" $
+        extendContextWithTypeVar "β" mempty
+
 main :: IO ()
 main = do
   args <- getArgs
-  let ctx = [VarWithType "a" ( TypeVar "A" ), VarWithType "aa" ( TypeVar "A" ), VarWithType "b" ( TypeVar "B" )]
   fileContent <- readFile $ head args
-  putStr $ case processString ctx fileContent of
+  putStr $ case processString testContext fileContent of
     ( Left err ) -> err
-    ( Right t ) -> show $ TermWithContext ctx t
+    ( Right ( tm, tp ) ) -> show ( termToTermSimple testContext tm ) ++ " : " ++ show ( typeToTypeSimple testContext tp )

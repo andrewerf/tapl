@@ -22,6 +22,8 @@ $alpha [$alpha $digit \_ \']*
 \;				{ \_ -> TkSemicolon }
 \:				{ \_ -> TkColon }
 \->				{ \_ -> TkArrow }
+\*              { \_ -> TkStar }
+\@              { \_ -> TkP }
 
 {
 
@@ -35,7 +37,9 @@ data Token =
   TkIn |
   TkSemicolon |
   TkColon |
-  TkArrow
+  TkArrow |
+  TkStar |
+  TkP
   deriving ( Eq, Show )
 
 tkVarName :: Token -> String

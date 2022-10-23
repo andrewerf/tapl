@@ -17,16 +17,18 @@ var			{ TkVar _ }
 '('			{ TkLeftPar }
 ')'			{ TkRightPar }
 '='			{ TkEq }
-In			{ TkIn }
+in			{ TkIn }
 ';'			{ TkSemicolon }
 ':'			{ TkColon }
 '->'		{ TkArrow }
+'*'         { TkStar }
+'@'         { TkP }
 
 %%
 
 LetExpr	: var '=' Terms ';' LetExpr
 								{ TmsLet ( tkVarName $1 ) $3 $5 }
-		| var '=' Terms In Terms
+		| var '=' Terms in Terms
 								{ TmsLet ( tkVarName $1 ) $3 $5 }
 		| Terms					{ $1 }
 
