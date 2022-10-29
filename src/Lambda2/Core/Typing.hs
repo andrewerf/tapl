@@ -39,19 +39,19 @@ typeof ctx ( TmAbs varName varType ( TailAbs tailTerm ) ) = case typeof ( extend
 typeof _ ( TmAbs _ varType ( ActiveAbs _ tp _ ) ) = Right $ TpArrow varType tp 
 
 typeof ctx ( TmApp tm1 tm2 ) = case typeof ctx tm1 of
-  Left err -> Left $ err >> errorConstructor BadLeftType
+  Left err -> Left $ err >> errorConstructor BadLeftType []
   Right tp1 -> case typeof ctx tm2 of
-    Left err -> Left $ err >> errorConstructor BadRightType
+    Left err -> Left $ err >> errorConstructor BadRightType []
     Right tp2 -> case tp1 of
       TpArrow tpArg tpRes -> if tpArg == tp2
         then Right tpRes
-        else Left $ errorConstructor TypesNotEq
+        else Left $ errorConstructor TypesNotEq [tp1, tp2]
       TpPoly _ tpTail -> case tm2 of
-        TmType tp3 -> Right $ substType tpTail 0 tp3
-        _ -> Left $ errorConstructor BadRightType
-      _ -> Left $ errorConstructor BadLeftType
+        TmType tp3 -> Right $ shiftType0 ( -1 ) $ substType tpTail 0 ( shiftType0 1 tp3 )
+        _ -> Left $ errorConstructor BadRightType [tp1, tp2]
+      _ -> Left $ errorConstructor BadLeftType [tp1, tp2]
   where
-    errorConstructor k = makeTypeError k ctx [tm1, tm2] []
+    errorConstructor k = makeTypeError k ctx [tm1, tm2]
 
 typeof _ ( TmType tp ) = Right tp
 
