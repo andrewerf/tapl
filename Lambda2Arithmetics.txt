@@ -1,5 +1,6 @@
-true = \α:*.\x:α.\y:α.x;
-false = \α:*.\x:α.\y:α.y;
-and = \α:*.\x:(@α.α->α->α).\y:(@α.α->α->α).\a:α.\b:α.y α ( x α a b ) b
+mk_pair = \T:*.\a:T.\b:T.\f:T->T->T.f a b;
+fst = \T:*.\p:(T->T->T)->T.p (\a:T.\b:T.a);
+snd = \T:*.\p:(T->T->T)->T.p (\a:T.\b:T.b);
+p = mk_pair Int 10 ( plus Int 10 5 )
 in
-( and β true false ) b bb
+snd Int p

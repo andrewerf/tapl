@@ -15,10 +15,13 @@ $white+		;
 \\				{ \s -> TkAbs }
 =				{ \_ -> TkEq }
 in				{ \_ -> TkIn }
+[A-Z]  [$alpha $digit \_ \']*
+                { \s -> TkTypeVar s }
 $alpha [$alpha $digit \_ \']*
 				{ \s -> TkVar s }
 $greek [$greek $digit \_ \']*
                 { \s -> TkTypeVar s }
+[1-9][$digit]*  { \s -> TkInt ( read s :: Int ) }
 \( 				{ \_ -> TkLeftPar }
 \) 				{ \_ -> TkRightPar }
 \.				{ \_ -> TkDot }
@@ -43,12 +46,18 @@ data Token =
   TkColon |
   TkArrow |
   TkStar |
-  TkP
+  TkP |
+  TkInt Int
   deriving ( Eq, Show )
 
 tkVarName :: Token -> String
 tkVarName ( TkVar name ) = name
 tkVarName ( TkTypeVar name ) = name
 tkVarName _ = ""
+
+tkIntVal :: Token -> Int
+tkIntVal ( TkInt i ) = i
+tkIntVal tk = error ( "Trying to get integer value from " ++ show tk )
+
 
 }

@@ -7,6 +7,7 @@ where
 
 import Lambda2.Core.AST
 import Lambda2.Core.Errors
+import Lambda2.Core.BasicTypes ( getBasicType )
 
 
 -- TODO:
@@ -25,13 +26,17 @@ substType ( TpPoly typeVarName tailType ) j s = TpPoly typeVarName ( substType t
 
 
 typeof :: Context -> Term -> Either ( ErrorM () ) Type
-typeof ctx tm@( TmVar i ) = case getVar ctx i of
+typeof ctx tm@( TmVar ( BoundVar i ) ) = case getVar ctx i of
   Nothing -> Left $ makeTypeError NoVarInContext ctx [tm] []
   Just ( _, varType ) -> Right varType
 
-typeof ctx ( TmAbs varName varType tailTerm ) = case typeof ( extendContextWithVar varName varType ctx ) tailTerm of
+typeof ctx ( TmVar ( DataVar d ) ) = getBasicType ctx d
+
+typeof ctx ( TmAbs varName varType ( TailAbs tailTerm ) ) = case typeof ( extendContextWithVar varName varType ctx ) tailTerm of
   Left err -> Left $ err >> makeTypeError BadTailType ctx [tailTerm] [varType]
   Right tailType -> Right $ TpArrow varType ( shiftType0 ( -1 ) tailType ) -- shift because the context was extended with 1 var
+  
+typeof _ ( TmAbs _ varType ( ActiveAbs _ tp _ ) ) = Right $ TpArrow varType tp 
 
 typeof ctx ( TmApp tm1 tm2 ) = case typeof ctx tm1 of
   Left err -> Left $ err >> errorConstructor BadLeftType

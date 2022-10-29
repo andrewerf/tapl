@@ -6,6 +6,13 @@ module Lambda2.Core.AST
   TermSimple(..),
   Type(..),
   Term(..),
+  TermData(..),
+  VarBinding(..),
+  VarBindingInt,
+  VarBindingString,
+  AbsBinding(..),
+  AbsBindingTerm,
+  AbsBindingTermSimple,
   Context,
   ContextMember,
   shiftType0,
@@ -27,6 +34,31 @@ import Relude.List
 import Data.List ( find, elemIndex )
 import Control.Applicative ( liftA2 )
 
+
+
+
+data TermData =
+  TdInt Int |
+  TdFloat Float |
+  TdString String
+  deriving ( Eq, Show )
+
+data VarBinding a =
+  BoundVar a |
+  DataVar TermData
+  deriving ( Eq, Show )
+
+type VarBindingInt = VarBinding Int
+type VarBindingString = VarBinding String
+
+-- function and identifier
+data AbsBinding a b =
+  TailAbs a |
+  ActiveAbs ( Term -> Term ) b ( Maybe String )
+
+type AbsBindingTerm = AbsBinding Term Type
+type AbsBindingTermSimple = AbsBinding TermSimple TypeSimple
+
 data Kinds =
   KndStar
 
@@ -37,8 +69,8 @@ data TypeSimple =
   deriving ( Eq )
 
 data TermSimple =
-  TmsVar String |
-  TmsAbs String TypeSimple TermSimple |
+  TmsVar VarBindingString |
+  TmsAbs String TypeSimple AbsBindingTermSimple |
   TmsApp TermSimple TermSimple |
   TmsLet String TermSimple TermSimple |
   TmsPoly String TermSimple |
@@ -52,8 +84,8 @@ data Type =
   deriving ( Eq, Show )
 
 data Term =
-  TmVar Int |
-  TmAbs String Type Term |
+  TmVar VarBindingInt |
+  TmAbs String Type AbsBindingTerm |
   TmApp Term Term |
   TmPoly String Term |
   TmType Type
@@ -63,7 +95,7 @@ data Term =
 -- Context member is either "var:type" pair or "type:*" pair
 -- Note that indices of types in the context are relative to the var
 -- For instance a context Γ = β:*, γ:*, b:β, c:γ is encoded as
--- CmType "β", CmType "γ", CmVar "b" ( TpVar 2 ), CmVar "c" ( TpVar 2 )
+-- CmType "β", CmType "γ", CmVar "b" _ ( TpVar 2 ), CmVar "c" _ ( TpVar 2 )
 --                    ^^^ ---------------------------------------- ^^^
 --                                      distance = 1
 --        ^^^ ------------------------------ ^^^
@@ -106,10 +138,12 @@ shiftType0 = shiftType 0
 --      cutoff  shift
 shift :: Int -> Int -> Term -> Term
 shift c s = \case
-  TmVar k
-    | k < c -> TmVar k
-    | otherwise -> TmVar ( k + s )
-  TmAbs varName varType tailTerm -> TmAbs varName ( shiftType c s varType ) ( shift ( c + 1 ) s tailTerm )
+  TmVar ( BoundVar k )
+    | k < c -> TmVar $ BoundVar k
+    | otherwise -> TmVar $ BoundVar ( k + s )
+  TmVar ( DataVar d ) -> TmVar $ DataVar d
+  TmAbs varName varType ( TailAbs tailTerm ) -> TmAbs varName ( shiftType c s varType ) $ TailAbs ( shift ( c + 1 ) s tailTerm )
+  TmAbs varName varType ( ActiveAbs f tp n ) -> TmAbs varName varType $ ActiveAbs f ( shiftType c s tp ) n
   TmApp t1 t2 -> TmApp ( shift c s t1 ) ( shift c s t2 )
   TmPoly typeVarName tm -> TmPoly typeVarName ( shift ( c + 1 ) s tm )
   TmType tp -> TmType ( shiftType c s tp )
@@ -154,12 +188,26 @@ typeToTypeSimple ctx =
 termToTermSimple :: Context -> Term -> Maybe TermSimple
 termToTermSimple ctx =
   \case
-    TmVar i -> TmsVar . fst <$> getVar ctx i
-    TmAbs s tp tm -> liftA2 ( TmsAbs s ) ( typeToTypeSimple ctx tp ) ( termToTermSimple ( extendContextWithVar s tp ctx ) tm )
+    TmVar ( BoundVar i ) -> TmsVar . BoundVar . fst <$> getVar ctx i
+    TmVar ( DataVar d ) -> Just $ TmsVar $ DataVar d
+    TmAbs s tp ( TailAbs tm ) -> liftA2 ( \tp' tm' -> TmsAbs s tp' ( TailAbs tm' ) ) ( typeToTypeSimple ctx tp ) ( termToTermSimple ( extendContextWithVar s tp ctx ) tm )
+    TmAbs s tp ( ActiveAbs _ tpAbs n ) -> liftA2 ( \tp' tpAbs' -> TmsAbs s tp' ( ActiveAbs id tpAbs' n ) ) ( typeToTypeSimple ctx tp ) ( typeToTypeSimple ctx tpAbs )
     TmApp t1 t2 -> liftA2 TmsApp ( termToTermSimple ctx t1 ) ( termToTermSimple ctx  t2 )
     TmPoly s t -> TmsPoly s <$> termToTermSimple ( extendContextWithTypeVar s ctx ) t
     TmType t -> TmsType <$> typeToTypeSimple ctx t
 
+
+instance ( Eq a, Eq b ) => Eq ( AbsBinding a b ) where
+  (==) ( TailAbs t1 ) ( TailAbs t2 ) = t1 == t2
+  (==) ( ActiveAbs _ tp1 n1 ) ( ActiveAbs _ tp2 n2 ) = tp1 == tp2 && case liftA2 (==) n1 n2 of
+    Just True -> True
+    _ -> False
+  (==) _ _ = False
+
+instance ( Show a, Show b ) => Show ( AbsBinding a b ) where
+  show ( TailAbs t ) = "TailAbs " ++ show t
+  show ( ActiveAbs _ tp ( Just n ) ) = "ActiveAbs " ++ n ++ ":" ++ show tp
+  show _ = "some nameless function"
 
 instance Show TypeSimple where
   show ( TpsVar s ) = s
@@ -167,7 +215,8 @@ instance Show TypeSimple where
   show ( TpsPoly s t ) = "@" ++ s ++ "." ++ show t
 
 instance Show TermSimple where
-  show ( TmsVar s ) = s
+  show ( TmsVar ( BoundVar s ) ) = s
+  show ( TmsVar ( DataVar d ) ) = show d
   show ( TmsType t ) = show t
   show ( TmsAbs s tp tm ) = "(\\" ++ s ++ ":" ++ show tp ++ "." ++ show tm ++ ")"
   show ( TmsApp t1 t2 ) = show t1 ++ " " ++ show t2

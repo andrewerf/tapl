@@ -18,21 +18,28 @@ testContext =
     extendContextWithVar "b" ( TpVar 1 ) $
       extendContextWithTypeVar "γ" $
         extendContextWithTypeVar "β" mempty
+        
+
+makeBoundVar i = TmVar ( BoundVar i )
+makeBoundVarSimple i = TmsVar ( BoundVar i )
+
+makeTailAbs v tp t = TmAbs v tp ( TailAbs t )
+makeTailAbsSimple v tp t = TmsAbs v tp ( TailAbs t )
 
 
 testDesugar = TestLabel "desugar" $ numberedTestList [
 
     TestCase $ assertEqual "Desugaring \\α : *.\\x : α.x"
-      ( Right $ TmPoly "α" ( TmAbs "x" ( TpVar 0 ) ( TmVar 0 ) ) )
-      ( desugar mempty ( TmsPoly "α" ( TmsAbs "x" ( TpsVar "α" ) ( TmsVar "x" ) ) ) ),
+      ( Right $ TmPoly "α" ( makeTailAbs "x" ( TpVar 0 ) ( makeBoundVar 0 ) ) )
+      ( desugar mempty ( TmsPoly "α" ( makeTailAbsSimple "x" ( TpsVar "α" ) ( makeBoundVarSimple "x" ) ) ) ),
 
     TestCase $ assertEqual "Desugaring \\α : *.\\x : α.b"
-      ( Right $ TmPoly "α" ( TmAbs "x" ( TpVar 0 ) ( TmVar 3 ) ) )
-      ( desugar testContext ( TmsPoly "α" ( TmsAbs "x" ( TpsVar "α" ) ( TmsVar "b" ) ) ) ),
+      ( Right $ TmPoly "α" ( makeTailAbs "x" ( TpVar 0 ) ( makeBoundVar 3 ) ) )
+      ( desugar testContext ( TmsPoly "α" ( makeTailAbsSimple "x" ( TpsVar "α" ) ( makeBoundVarSimple "b" ) ) ) ),
 
     TestCase $ assertEqual "Desugaring \\α : *.\\f : β -> α.f b"
-      ( Right $ TmPoly "α" ( TmAbs "f" ( TpArrow ( TpVar 4 ) ( TpVar 0 ) ) ( TmApp ( TmVar 0 ) ( TmVar 3 ) ) ) )
-      ( desugar testContext ( TmsPoly "α" ( TmsAbs "f" ( TpsArrow ( TpsVar "β" ) ( TpsVar "α" ) ) ( TmsApp ( TmsVar "f" ) ( TmsVar "b" ) ) ) ) )
+      ( Right $ TmPoly "α" ( makeTailAbs "f" ( TpArrow ( TpVar 4 ) ( TpVar 0 ) ) ( TmApp ( makeBoundVar 0 ) ( makeBoundVar 3 ) ) ) )
+      ( desugar testContext ( TmsPoly "α" ( makeTailAbsSimple "f" ( TpsArrow ( TpsVar "β" ) ( TpsVar "α" ) ) ( TmsApp ( makeBoundVarSimple "f" ) ( makeBoundVarSimple "b" ) ) ) ) )
 
   ]
 

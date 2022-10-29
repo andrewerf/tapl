@@ -1,6 +1,5 @@
 module Lambda2.Core.Preprocess
   (
-  desugarType,
   desugar
   )
 where
@@ -8,39 +7,32 @@ where
 import Lambda2.Core.AST
 import Lambda2.Core.Errors
 import Lambda2.Core.Typing
-
-
-
-desugarType :: Context -> TypeSimple ->  Either ( ErrorM () ) Type
-desugarType ctx tp@( TpsVar varName ) = case getVarIndex ctx varName of
-  Just i -> Right $ TpVar i
-  Nothing -> Left $ makeSimpleDesugarError NoVarInContext ctx [] [tp]
-
-desugarType ctx ( TpsArrow tp1simple tp2simple ) = case desugarType ctx tp1simple of
-  Left err -> Left $ err >> errorConstructor BadLeftType
-  Right tp1 -> case desugarType ctx tp2simple of
-    Left err -> Left $ err >> errorConstructor BadRightType
-    Right tp2 -> Right $ TpArrow tp1 tp2
-  where
-    errorConstructor k = makeSimpleDesugarError k ctx [] [tp1simple, tp2simple]
-
-desugarType ctx ( TpsPoly varName tailTypeSimple ) = case desugarType ( extendContextWithTypeVar varName ctx ) tailTypeSimple of
-  Left err -> Left $ err >> makeSimpleDesugarError BadTailType ctx [] [tailTypeSimple]
-  Right tailType -> Right $ TpPoly varName tailType
+import Lambda2.Core.PreprocessType ( desugarType )
+import Lambda2.Core.BasicTypes
 
 
 desugar :: Context -> TermSimple -> Either ( ErrorM () ) Term
-desugar ctx tm@( TmsVar varName ) = case getVarIndex ctx varName of
-  Just i -> Right $ TmVar i
-  Nothing -> Left $ makeSimpleDesugarError NoVarInContext ctx [tm] []
+desugar ctx tm@( TmsVar ( BoundVar varName ) ) = case createBasicFunc varName of
+  Just activeTm -> Right activeTm
+  Nothing -> case getVarIndex ctx varName of
+    Just i -> Right $ TmVar ( BoundVar i )
+    Nothing -> Left $ makeSimpleDesugarError NoVarInContext ctx [tm] []
 
-desugar ctx ( TmsAbs varName varTypeSimple tailTermSimple ) = case desugarType ctx varTypeSimple of
+desugar _ ( TmsVar ( DataVar d ) ) = Right $ TmVar ( DataVar d )
+
+desugar ctx ( TmsAbs varName varTypeSimple ( TailAbs tailTermSimple ) ) = case desugarType ctx varTypeSimple of
   Left err -> Left $ err >> errorConstructor BadHeadType
   Right varType -> case desugar ( extendContextWithVar varName varType ctx ) tailTermSimple of
     Left err -> Left $ err >> errorConstructor BadTailTerm
-    Right tailTerm -> Right $ TmAbs varName varType tailTerm
+    Right tailTerm -> Right $ TmAbs varName varType $ TailAbs tailTerm
   where
     errorConstructor k = makeSimpleDesugarError k ctx [tailTermSimple] [varTypeSimple]
+
+desugar ctx ( TmsAbs varName varTypeSimple ( ActiveAbs f tp n ) ) = case desugarType ctx varTypeSimple of
+  Left err -> Left $ err >> errorConstructor BadHeadType
+  Right varType -> TmAbs varName varType . ( \tp' -> ActiveAbs f tp' n ) <$> desugarType ctx tp
+  where
+    errorConstructor k = makeSimpleDesugarError k ctx [] [varTypeSimple]
 
 desugar ctx ( TmsApp t1simple t2simple ) = case desugar ctx t1simple of
   Left err -> Left $ err >> errorConstructor BadLeftTerm
@@ -64,6 +56,6 @@ desugar ctx ( TmsLet varName t1simple t2simple ) = case desugar ctx t1simple of
     Left err -> Left $ err >> errorConstructor BadLeftTerm
     Right tp1 -> case desugar ( extendContextWithVar varName tp1 ctx ) t2simple of
       Left err -> Left $ err >> errorConstructor BadRightTerm
-      Right t2 -> Right $ TmApp ( TmAbs varName tp1 t2 ) t1
+      Right t2 -> Right $ TmApp ( TmAbs varName tp1 ( TailAbs t2 ) ) t1
   where
     errorConstructor k = makeSimpleDesugarError k ctx [t1simple, t2simple] []

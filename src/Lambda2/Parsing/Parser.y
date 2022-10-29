@@ -24,6 +24,7 @@ in			{ TkIn }
 '->'		{ TkArrow }
 '*'         { TkStar }
 '@'         { TkP }
+int         { TkInt _ }
 
 %%
 
@@ -38,13 +39,15 @@ Terms	: Term					{ $1 }
 
 Type	: type_var			    { TpsVar ( tkVarName $1 ) }
 		| type_var '->' Type	{ TpsArrow ( TpsVar ( tkVarName $1 ) ) $3 }
+		| Type '->' Type    	{ TpsArrow $1 $3 }
         | '@' type_var '.' Type { TpsPoly ( tkVarName $2 ) $4 }
         | '(' Type ')'          { $2 }
 
-Term	: var					{ TmsVar ( tkVarName $1 ) }
+Term	: var					{ TmsVar ( BoundVar $ tkVarName $1 ) }
+        | int                   { TmsVar ( DataVar ( TdInt $ tkIntVal $1 ) ) }
         | Type                  { TmsType $1 }
 		| abs var ':' Type '.' Terms
-								{ TmsAbs ( tkVarName $2 ) $4 $6 }
+								{ TmsAbs ( tkVarName $2 ) $4 ( TailAbs $6 ) }
         | abs type_var ':' '*' '.' Terms
                                 { TmsPoly ( tkVarName $2 ) $6 }
 		| '(' Terms ')'			{ $2 }

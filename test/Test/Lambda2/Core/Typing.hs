@@ -11,6 +11,13 @@ import Lambda2.Core.AST
 import Lambda2.Core.Typing
 
 
+makeBoundVar i = TmVar ( BoundVar i )
+makeBoundVarSimple i = TmsVar ( BoundVar i )
+
+makeTailAbs v tp t = TmAbs v tp ( TailAbs t )
+makeTailAbsSimple v tp t = TmsAbs v tp ( TailAbs t )
+
+
 -- TODO: write DSL for lambda in Haskell with usage of Free monad
 
 -- Γ = β:*, γ:*, b:β, c:γ
@@ -26,31 +33,31 @@ testTypeOf = TestLabel "typeof" $ numberedTestList [
 
     TestCase $ assertEqual "Type of c is γ"
       ( Right $ TpVar 2 )
-      ( typeof testContext ( TmVar 0 ) ),
+      ( typeof testContext ( makeBoundVar 0 ) ),
 
     TestCase $ assertEqual "Type of \\x : β. x is β -> β"
       ( Right $ TpArrow ( TpVar 3 ) ( TpVar 3 ) )
-      ( typeof testContext ( TmAbs "x" ( TpVar 3 ) ( TmVar 0 ) ) ),
+      ( typeof testContext ( makeTailAbs "x" ( TpVar 3 ) ( makeBoundVar 0 ) ) ),
 
     TestCase $ assertEqual "Type of \\f : β -> γ.\\x : β.f x is ( β -> γ ) -> β -> γ"
       ( Right $ TpArrow ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) )
-      ( typeof testContext ( TmAbs "f" ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( TmAbs "x" ( TpVar 4 ) ( TmApp ( TmVar 1 ) ( TmVar 0 ) ) ) ) ),
+      ( typeof testContext ( makeTailAbs "f" ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( makeTailAbs "x" ( TpVar 4 ) ( TmApp ( makeBoundVar 1 ) ( makeBoundVar 0 ) ) ) ) ),
 
     TestCase $ assertEqual "Type of \\f : β -> γ.\\x : β.f b is ( β -> γ ) -> β -> γ"
       ( Right $ TpArrow ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) )
-      ( typeof testContext ( TmAbs "f" ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( TmAbs "x" ( TpVar 4 ) ( TmApp ( TmVar 1 ) ( TmVar 3 ) ) ) ) ),
+      ( typeof testContext ( makeTailAbs "f" ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ( makeTailAbs "x" ( TpVar 4 ) ( TmApp ( makeBoundVar 1 ) ( makeBoundVar 3 ) ) ) ) ),
 
     TestCase $ assertEqual "Type of \\δ : *.\\x : δ.x is Πδ:*.δ -> δ"
       ( Right $ TpPoly "δ" ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) )
-      ( typeof testContext ( TmPoly "δ" ( TmAbs "x" ( TpVar 0 ) ( TmVar 0 ) ) ) ),
+      ( typeof testContext ( TmPoly "δ" ( makeTailAbs "x" ( TpVar 0 ) ( makeBoundVar 0 ) ) ) ),
 
     TestCase $ assertEqual "Type of \\x : β.\\δ : *.x is β -> Πδ:*.β"
       ( Right $ TpArrow ( TpVar 3 ) ( TpPoly "δ" ( TpVar 4 ) ) )
-      ( typeof testContext ( TmAbs "x" ( TpVar 3 ) ( TmPoly "δ" ( TmVar 1 ) ) ) ),
+      ( typeof testContext ( makeTailAbs "x" ( TpVar 3 ) ( TmPoly "δ" ( makeBoundVar 1 ) ) ) ),
 
     TestCase $ assertEqual "Type of ( \\δ : *.\\x : δ. x ) β is β -> β"
       ( Right $ TpArrow ( TpVar 3 ) ( TpVar 3 ) )
-      ( typeof testContext ( TmApp ( TmPoly "δ" ( TmAbs "x" ( TpVar 0 ) ( TmVar 0 ) ) ) ( TmType ( TpVar 3 ) ) ) ),
+      ( typeof testContext ( TmApp ( TmPoly "δ" ( makeTailAbs "x" ( TpVar 0 ) ( makeBoundVar 0 ) ) ) ( TmType ( TpVar 3 ) ) ) ),
 
     TestCase $ assertEqual "Type of ( \\δ : *.\\τ : *.\\x : δ. x ) ( β -> γ ) is Πτ:*.( β -> γ ) -> ( β -> γ )"
       ( Right $ TpPoly "τ"
@@ -58,7 +65,7 @@ testTypeOf = TestLabel "typeof" $ numberedTestList [
           ( TpArrow ( TpVar 4 ) ( TpVar 3 ) )
           ( TpArrow ( TpVar 4 ) ( TpVar 3 ) ) ) )
       ( typeof testContext ( TmApp
-        ( TmPoly "δ" ( TmPoly "τ" ( TmAbs "x" ( TpVar 1 ) ( TmVar 0 ) ) ) )
+        ( TmPoly "δ" ( TmPoly "τ" ( makeTailAbs "x" ( TpVar 1 ) ( makeBoundVar 0 ) ) ) )
         ( TmType ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ) ) )
 
   ]
