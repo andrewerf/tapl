@@ -21,6 +21,7 @@ $alpha [$alpha $digit \_ \']*
 				{ \s -> TkVar s }
 $greek [$greek $digit \_ \']*
                 { \s -> TkTypeVar s }
+0               { \_ -> TkInt 0 }
 [1-9][$digit]*  { \s -> TkInt ( read s :: Int ) }
 \( 				{ \_ -> TkLeftPar }
 \) 				{ \_ -> TkRightPar }

@@ -39,7 +39,7 @@ instance Show ( ErrorExprStructure TermSimple TypeSimple ) where
   show ( ErrorExprStructure knd ctx tms tps ) = show knd ++ "\ncontext: " ++ show ctx ++ ", terms: " ++ show tms ++ ", types:" ++ show tps
   
 instance Show ( ErrorExprStructure Term Type ) where
-  show ( ErrorExprStructure knd ctx tms tps ) = show knd ++ "\ncontext: " ++ show ctx ++ ", terms: " ++ show tms ++ ", types:" ++ show tps
+  show ( ErrorExprStructure knd ctx tms tps ) = show knd ++ "\ncontext: " ++ show ctx ++ ", terms: " ++ show ( map ( termToTermSimple ctx ) tms ) ++ ", types:" ++ show ( map ( typeToTypeSimple ctx ) tps )
 
 
 data Error expr next =
