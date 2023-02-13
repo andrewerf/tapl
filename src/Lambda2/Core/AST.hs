@@ -205,7 +205,7 @@ instance ( Eq a, Eq b ) => Eq ( AbsBinding a b ) where
   (==) _ _ = False
 
 instance ( Show a, Show b ) => Show ( AbsBinding a b ) where
-  show ( TailAbs t ) = "TailAbs " ++ show t
+  show ( TailAbs t ) = show t
   show ( ActiveAbs _ tp ( Just n ) ) = "ActiveAbs " ++ n ++ ":" ++ show tp
   show _ = "some nameless function"
 

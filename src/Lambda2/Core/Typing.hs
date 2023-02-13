@@ -25,6 +25,11 @@ substType ( TpArrow tp1 tp2 ) j s = TpArrow ( substType tp1 j s ) ( substType tp
 substType ( TpPoly typeVarName tailType ) j s = TpPoly typeVarName ( substType tailType ( j + 1 ) ( shiftType0 1 s ) )
 
 
+isCompatible :: Type -> Type -> Bool
+isCompatible ( TpPoly _ t1 ) ( TpPoly _ t2 ) = isCompatible t1 t2
+isCompatible ( TpArrow tpArg1 tpRes1 ) ( TpArrow tpArg2 tpRes2 ) = isCompatible tpArg1 tpArg2 && isCompatible tpRes1 tpRes2 
+isCompatible t1 t2 = t1 == t2
+
 typeof :: Context -> Term -> Either ( ErrorM () ) Type
 typeof ctx tm@( TmVar ( BoundVar i ) ) = case getVar ctx i of
   Nothing -> Left $ makeTypeError NoVarInContext ctx [tm] []
@@ -43,7 +48,7 @@ typeof ctx ( TmApp tm1 tm2 ) = case typeof ctx tm1 of
   Right tp1 -> case typeof ctx tm2 of
     Left err -> Left $ err >> errorConstructor BadRightType []
     Right tp2 -> case tp1 of
-      TpArrow tpArg tpRes -> if tpArg == tp2
+      TpArrow tpArg tpRes -> if isCompatible tpArg tp2
         then Right tpRes
         else Left $ errorConstructor TypesNotEq [tp1, tp2]
       TpPoly _ tpTail -> case tm2 of

@@ -66,7 +66,14 @@ testTypeOf = TestLabel "typeof" $ numberedTestList [
           ( TpArrow ( TpVar 4 ) ( TpVar 3 ) ) ) )
       ( typeof testContext ( TmApp
         ( TmPoly "δ" ( TmPoly "τ" ( makeTailAbs "x" ( TpVar 1 ) ( makeBoundVar 0 ) ) ) )
-        ( TmType ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ) ) )
+        ( TmType ( TpArrow ( TpVar 3 ) ( TpVar 2 ) ) ) ) ),
+
+    TestCase $ assertEqual "Type of ( \\δ : *.\\f : ( Πσ:*.σ -> σ ).\\x : δ.x ) β ( \\ε : *.\\x : ε.x ) is β -> β"
+      ( Right ( TpArrow ( TpVar 3 ) ( TpVar 3 ) ) )
+      ( typeof testContext ( TmApp ( TmApp
+        ( TmPoly "δ" ( makeTailAbs "f" ( TpPoly "σ" ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) ) ( makeTailAbs "x" ( TpVar 1 ) ( makeBoundVar 0 ) ) ) )
+        ( TmType ( TpVar 3 ) ) )
+          ( TmPoly "ε" ( makeTailAbs "x" ( TpVar 0 ) ( makeBoundVar 0 ) ) ) ) )
 
   ]
 
