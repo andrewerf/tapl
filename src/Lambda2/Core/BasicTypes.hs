@@ -35,18 +35,18 @@ makeBinding2 bindingName f varType1 varType2 absType = TmAbs "x" varType1 $ Acti
 
 
 makePolyBinding1 :: String -> ( TermData -> TermData ) -> ( String -> Type ) -> Term
-makePolyBinding1 bindingName f makeAbsType = TmPoly "t" $ makeBinding1 bindingName f ( TpVar 0 ) ( makeAbsType "t" )
+makePolyBinding1 bindingName f makeAbsType = TmPoly "t" KndStar $ makeBinding1 bindingName f ( TpVar 0 ) ( makeAbsType "t" )
 
 makePolyBinding2 :: String -> ( TermData -> TermData -> TermData ) -> ( String -> Type ) -> Term
-makePolyBinding2 bindingName f makeAbsType = TmPoly "t" $ makeBinding2 bindingName f ( TpVar 0 ) ( TpVar 0 ) ( makeAbsType "t" )
+makePolyBinding2 bindingName f makeAbsType = TmPoly "t" KndStar $ makeBinding2 bindingName f ( TpVar 0 ) ( TpVar 0 ) ( makeAbsType "t" )
 
 
 basicContext :: Context
 basicContext = 
-  extendContextWithVar "minus" ( TpPoly "t" ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) ) $
-  extendContextWithVar "plus" ( TpPoly "t" ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) ) $
-  extendContextWithTypeVar "Int" $
-  extendContextWithTypeVar "Float" mempty
+  extendContextWithVar "minus" ( TpPoly "t" KndStar ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) ) $
+  extendContextWithVar "plus" ( TpPoly "t" KndStar ( TpArrow ( TpVar 0 ) ( TpVar 0 ) ) ) $
+  extendContextWithTypeVar "Int" ( TpVar 0 ) KndStar $
+  extendContextWithTypeVar "Float" ( TpVar 0 ) KndStar mempty
 
 
 plus :: TermData -> TermData -> TermData

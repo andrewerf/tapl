@@ -24,7 +24,9 @@ data ErrorKind =
   BadTailType |
   BadLeftType |
   BadRightType |
-  TypesNotEq
+  TypesNotEq |
+  NotAType |
+  CouldNotEvalType
 
   deriving ( Eq, Show )
 

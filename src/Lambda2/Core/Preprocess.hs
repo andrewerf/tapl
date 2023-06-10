@@ -7,8 +7,10 @@ where
 import Lambda2.Core.AST
 import Lambda2.Core.Errors
 import Lambda2.Core.Typing
-import Lambda2.Core.PreprocessType ( desugarType )
+import Lambda2.Core.PreprocessType ( desugarType, desugarKind )
 import Lambda2.Core.BasicTypes
+import Data.Bifunctor ( bimap ) 
+
 
 
 desugar :: Context -> TermSimple -> Either ( ErrorM () ) Term
@@ -46,9 +48,11 @@ desugar ctx ( TmsType tpsimple ) = case desugarType ctx tpsimple of
   Left err -> Left $ err >> makeSimpleDesugarError BadHeadType ctx [] [tpsimple]
   Right tp -> Right $ TmType tp
 
-desugar ctx ( TmsPoly typeVarName tailTermSimple ) = case desugar ( extendContextWithTypeVar typeVarName ctx ) tailTermSimple of
+desugar ctx ( TmsPoly typeVarName knd tailTermSimple ) = case desugar ( extendContextWithTypeVar typeVarName ( TpVar 0 ) desugaredKind ctx ) tailTermSimple of
   Left err -> Left $ err >> makeSimpleDesugarError BadTailTerm ctx [TmsType (TpsVar typeVarName ), tailTermSimple] []
-  Right tailTerm -> Right $ TmPoly typeVarName tailTerm
+  Right tailTerm -> Right $ TmPoly typeVarName desugaredKind tailTerm
+  where
+    desugaredKind = desugarKind knd
 
 desugar ctx ( TmsLet varName t1simple t2simple ) = case desugar ctx t1simple of
   Left err -> Left $ err >> errorConstructor BadLeftTerm
@@ -59,3 +63,13 @@ desugar ctx ( TmsLet varName t1simple t2simple ) = case desugar ctx t1simple of
       Right t2 -> Right $ TmApp ( TmAbs varName tp1 ( TailAbs t2 ) ) t1
   where
     errorConstructor k = makeSimpleDesugarError k ctx [t1simple, t2simple] []
+
+desugar ctx ( TmsLetType varName ( TmsType tps ) tm2s ) = case desugarType ctx tps of
+  Left err -> Left $ err >> makeSimpleDesugarError NotAType ctx [tm2s] [tps]
+  Right tp -> case kindOf tp of
+    Nothing -> Left $ makeSimpleDesugarError NotAType ctx [tm2s] [tps]
+    Just knd -> case desugar ( extendContextWithTypeVar varName tp knd ctx ) tm2s of
+      Left err -> Left err
+      Right tm -> Right $ TmApp ( TmPoly varName knd tm ) ( TmType tp )
+
+desugar ctx _ = Left $ makeSimpleDesugarError NotAType ctx [] []

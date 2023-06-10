@@ -1,12 +1,18 @@
 module Lambda2.Core.PreprocessType
   (
-  desugarType
+  desugarType,
+  desugarKind
   )
 where
 
 
 import Lambda2.Core.AST
 import Lambda2.Core.Errors
+
+
+desugarKind :: KindSimple -> Kind
+desugarKind KndsStar = KndStar
+desugarKind ( KndsArrow k1 k2 ) = KndArrow ( desugarKind k1 ) ( desugarKind k2 )
 
 
 desugarType :: Context -> TypeSimple ->  Either ( ErrorM () ) Type
@@ -22,7 +28,20 @@ desugarType ctx ( TpsArrow tp1simple tp2simple ) = case desugarType ctx tp1simpl
   where
     errorConstructor k = makeSimpleDesugarError k ctx [] [tp1simple, tp2simple]
 
-desugarType ctx ( TpsPoly varName tailTypeSimple ) = case desugarType ( extendContextWithTypeVar varName ctx ) tailTypeSimple of
+desugarType ctx ( TpsPoly varName knds tailTypeSimple ) = case desugarType ( extendContextWithTypeVar varName ( TpVar 0 ) knd ctx ) tailTypeSimple of
   Left err -> Left $ err >> makeSimpleDesugarError BadTailType ctx [] [tailTypeSimple]
-  Right tailType -> Right $ TpPoly varName tailType
+  Right tailType -> Right $ TpPoly varName knd tailType
+  where
+    knd = desugarKind knds
 
+desugarType ctx ( TpsAbs varName knds tailTypeSimple ) =  case desugarType ( extendContextWithTypeVar varName ( TpVar 0 ) knd ctx ) tailTypeSimple of
+  Left err -> Left $ err >> makeSimpleDesugarError BadTailType ctx [] [tailTypeSimple]
+  Right tailType -> Right $ TpAbs varName knd tailType
+  where
+    knd = desugarKind knds
+
+desugarType ctx ( TpsApp t1s t2s ) = case desugarType ctx t1s of
+  Left err -> Left $ err >> makeSimpleDesugarError BadHeadType ctx [] [t2s]
+  Right t1 -> case desugarType ctx t2s of
+    Left err -> Left $ err >> makeSimpleDesugarError BadTailType ctx [] [t1s]
+    Right t2 -> Right $ TpApp t1 t2

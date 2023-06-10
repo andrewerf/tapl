@@ -24,7 +24,7 @@ subst ( TmAbs varName varType ( TailAbs tailTerm ) ) j s = TmAbs varName varType
 subst t@( TmAbs {}  ) _ _ = t
 subst ( TmApp t1 t2 ) j s = TmApp ( subst t1 j s ) ( subst t2 j s )
 subst tm@( TmType _ ) _ _ = tm
-subst ( TmPoly typeVarName tailTerm ) j s = TmPoly typeVarName ( subst tailTerm ( j + 1 ) ( shift0 1 s ) )
+subst ( TmPoly typeVarName knd tailTerm ) j s = TmPoly typeVarName knd ( subst tailTerm ( j + 1 ) ( shift0 1 s ) )
 
 
 substTypeInTerm :: Term -> Int -> Type -> Term
@@ -33,7 +33,7 @@ substTypeInTerm ( TmAbs varName varType ( TailAbs tailTerm ) ) j s = TmAbs varNa
 substTypeInTerm ( TmAbs varName varType activeAbs ) j s = TmAbs varName ( substType varType j s ) activeAbs
 substTypeInTerm ( TmApp t1 t2 ) j s = TmApp ( substTypeInTerm t1 j s ) ( substTypeInTerm t2 j s )
 substTypeInTerm ( TmType tp ) j s = TmType ( substType tp j s )
-substTypeInTerm ( TmPoly typeVarName tailTerm ) j s = TmPoly typeVarName ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
+substTypeInTerm ( TmPoly typeVarName knd tailTerm ) j s = TmPoly typeVarName knd ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
 
 
 eval1 :: Context -> Term -> Either String Term
@@ -43,7 +43,7 @@ eval1 _ ( TmApp ( TmAbs _ _ ( TailAbs tailTerm ) ) term )
 eval1 _ ( TmApp ( TmAbs _ _ ( ActiveAbs f _ _ ) ) term )
   | isval term = Right $ f term
 
-eval1 _ ( TmApp ( TmPoly _ tailTerm ) ( TmType tp ) )  = Right $ shift0 ( -1 ) ( substTypeInTerm tailTerm 0 ( shiftType0 1 tp  ) )
+eval1 _ ( TmApp ( TmPoly _ _ tailTerm ) ( TmType tp ) )  = Right $ shift0 ( -1 ) ( substTypeInTerm tailTerm 0 ( shiftType0 1 tp  ) )
 
 eval1 ctx ( TmApp term1 term2 )
   | not $ isval term1 = ( \term1' -> TmApp term1' term2 ) <$> eval1 ctx term1

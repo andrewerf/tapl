@@ -31,6 +31,7 @@ $greek [$greek $digit \_ \']*
 \->				{ \_ -> TkArrow }
 \*              { \_ -> TkStar }
 \@              { \_ -> TkP }
+\&              { \_ -> TkPt }
 
 {
 
@@ -48,6 +49,7 @@ data Token =
   TkArrow |
   TkStar |
   TkP |
+  TkPt |
   TkInt Int
   deriving ( Eq, Show )
 
