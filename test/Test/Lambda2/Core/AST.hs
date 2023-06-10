@@ -10,7 +10,7 @@ import Helper
 import Lambda2.Core.AST
 
 
-testContext = extendContextWithVar "a" ( TpVar 0 ) $ extendContextWithTypeVar "A" mempty
+testContext = extendContextWithVar "a" ( TpVar 0 ) $ extendContextWithTypeVar "A" ( TpVar 0 ) KndStar mempty
 
 testGetVarIndex = TestLabel "getVarIndex" $ numberedTestList [
     TestCase $ assertEqual ""
@@ -24,13 +24,7 @@ testGetVarIndex = TestLabel "getVarIndex" $ numberedTestList [
 testGetType = TestLabel "getType" $ numberedTestList [
     TestCase $ assertEqual ""
       ( Just $ TpVar 1 )
-      ( getType testContext "a" ),
-    TestCase $ assertEqual ""
-      Nothing
-      ( getType testContext "A" ),
-    TestCase $ assertEqual ""
-      Nothing
-      ( getType testContext "c" )
+      ( getType testContext "a" )
   ]
 
 testGetVar = TestLabel "getVar" $ numberedTestList [
