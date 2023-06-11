@@ -11,6 +11,7 @@ where
 import Lambda2.Core.AST
 import Lambda2.Core.Errors
 import Lambda2.Core.BasicTypes ( getBasicType )
+import Control.Applicative (liftA2)
 
 
 -- TODO:
@@ -36,21 +37,29 @@ isTypeVal :: Type -> Bool
 isTypeVal ( TpApp _ _ ) = False
 isTypeVal _ = True
 
-evalTypeApp :: Context -> Type -> Maybe Type
-evalTypeApp _ ( TpApp ( TpAbs _ _ tpTail ) tp ) = Just $ substType tpTail 0 tp
-evalTypeApp ctx ( TpApp ( TpVar x ) tp ) = case getVar ctx x of
-  Just ( _, realTp ) -> evalTypeApp ctx $ TpApp realTp tp
+evalTypeApp1 :: Context -> Type -> Maybe Type
+evalTypeApp1 _ ( TpApp ( TpAbs _ _ tpTail ) tp ) = Just $ shiftType0 ( -1 ) ( substType tpTail 0 ( shiftType0 1 tp ) )
+evalTypeApp1 ctx ( TpApp t1 t2 )
+  | not $ isTypeVal t1 = ( \t1' -> TpApp t1' t2 ) <$> evalTypeApp1 ctx t1
+  | not $ isTypeVal t2 = TpApp t1 <$> evalTypeApp1 ctx t2
+evalTypeApp1 ctx ( TpApp ( TpVar x ) tp ) = case getVar ctx x of
+  Just ( _, realTp ) -> evalTypeApp1 ctx $ TpApp realTp tp
   Nothing -> Nothing
-evalTypeApp _ _ = Nothing
+evalTypeApp1 _ _ = Nothing
 
+evalTypeApp :: Context -> Type -> Maybe Type
+evalTypeApp ctx tp 
+  | isTypeVal tp = Just tp
+  | otherwise = evalTypeApp1 ctx tp >>= evalTypeApp ctx
 
 isCompatible :: Context -> Type -> Type -> Bool
-isCompatible ctx ( TpPoly _ knd1 t1 ) ( TpPoly _ knd2 t2 ) = isCompatible ctx t1 t2 && knd1 == knd2
-isCompatible ctx ( TpArrow tpArg1 tpRes1 ) ( TpArrow tpArg2 tpRes2 ) = isCompatible ctx tpArg1 tpArg2 && isCompatible ctx tpRes1 tpRes2
-isCompatible ctx app@( TpApp _ _ ) t = app == t || case evalTypeApp ctx app of
-  Just tp -> isCompatible ctx tp t
-  Nothing -> False
-isCompatible ctx t1 t2 = t1 == t2
+isCompatible _ ( TpVar x ) ( TpVar y ) = x == y
+isCompatible ctx ( TpArrow tp1 tp2 ) ( TpArrow tp1' tp2' )
+  = maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx tp1) (evalTypeApp ctx tp1')) &&
+    maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx tp2) (evalTypeApp ctx tp2'))
+isCompatible ctx ( TpPoly s knd tp ) ( TpPoly _ _ tp' ) = isCompatible ( extendContextWithTypeVar s (TpVar 0) knd ctx )  tp tp'
+isCompatible ctx app1 app2
+  = maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx app1) (evalTypeApp ctx app2))
 
 
 kindOf :: Type -> Maybe Kind
@@ -88,7 +97,7 @@ typeof ctx ( TmApp tm1 tm2 ) = case typeof ctx tm1 of
         then Right tpRes
         else Left $ errorConstructor TypesNotEq [tp1, tp2]
       TpPoly _ knd tpTail -> case tm2 of
-        TmType tp3 -> case ( == knd ) <$> kindOf tp3 of
+        TmType tp3 -> case ( == knd ) <$> ( evalTypeApp ctx tp3 >>= kindOf ) of
           Just True -> Right $ shiftType0 ( -1 ) $ substType tpTail 0 ( shiftType0 1 tp3 )
           _ -> Left $ errorConstructor TypesNotEq [tp1, tp2]
         _ -> Left $ errorConstructor BadRightType [tp1, tp2]

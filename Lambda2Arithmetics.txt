@@ -1,6 +1,33 @@
-mk_pair = \T:*.\a:T.\b:T.\f:T->T->T.f a b;
-fst = \T:*.\p:(T->T->T)->T.p (\a:T.\b:T.a);
-snd = \T:*.\p:(T->T->T)->T.p (\a:T.\b:T.b);
-p = mk_pair Int 10 ( plus Int 10 5 )
+true = \α:*.\x:α.\y:α.x;
+false = \α:*.\x:α.\y:α.y;
+
+mk_pair = \A:*.\B:*.\a:A.\b:B.\C:*.\f:A->B->C.f a b;
+fst = \A:*.\B:*.\p:(@C.(A->B->C)->C).p A (\a:A.\b:B.a);
+snd = \A:*.\B:*.\p:(@C.(A->B->C)->C).p B (\a:A.\b:B.b);
+p = mk_pair Int Int 10 15;
+
+nil = \X:* . \R:* . \c:X->R->R . \n:R . n;
+
+isnil = \X:* . \l:(@R.(X->R->R)->R->R) .
+        l ( @Y.Y->Y->Y ) ( \h:X . \t:( @Y.Y->Y->Y ) . false ) ( true );
+
+cons = \X:* . \x:X . \tl:(@R.(X->R->R)->R->R) .
+            \R:*. \f:X->R->R. \n:R. f x ( tl R f n );
+
+head = \X:* . \x:X . \lst:(@R.(X->R->R)->R->R) .
+            lst X ( \hd:X.\tl:X. hd ) x;
+
+tail = \X:* . \lst:(@R.(X->R->R)->R->R) .
+            fst (@R.(X->R->R)->R->R) (@R.(X->R->R)->R->R) (
+                lst ( @C.( ( (@R.(X->R->R)->R->R) -> (@R.(X->R->R)->R->R) -> C ) -> C ) )
+                    ( \hd:X. \tl: ( @C.( ( (@R.(X->R->R)->R->R) -> (@R.(X->R->R)->R->R) -> C ) -> C ) ) .
+                        mk_pair (@R.(X->R->R)->R->R) (@R.(X->R->R)->R->R)
+                            ( snd (@R.(X->R->R)->R->R) (@R.(X->R->R)->R->R) tl )
+                            ( cons X hd ( snd (@R.(X->R->R)->R->R) (@R.(X->R->R)->R->R) tl ) ) )
+                    ( mk_pair (@R.(X->R->R)->R->R) (@R.(X->R->R)->R->R) ( nil X ) ( nil X ) )
+            );
+
+lst = cons Int 12 (cons Int 14 (cons Int 15 (nil Int)))
+
 in
-snd Int p
+head Int 0 ( tail Int lst )
