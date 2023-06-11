@@ -38,6 +38,7 @@ ghc-options:
 - -Wredundant-constraints
 - -O2
 - -Werror=incomplete-patterns
+- -fasm
 
 library:
   source-dirs: src
@@ -55,6 +56,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - tapl
+  interop-exe:
+    main: C/main.c
+    dependencies:
+      - tapl
 
 tests:
   tapl-test:
