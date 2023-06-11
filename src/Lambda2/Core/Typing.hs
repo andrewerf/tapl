@@ -58,8 +58,11 @@ isCompatible ctx ( TpArrow tp1 tp2 ) ( TpArrow tp1' tp2' )
   = maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx tp1) (evalTypeApp ctx tp1')) &&
     maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx tp2) (evalTypeApp ctx tp2'))
 isCompatible ctx ( TpPoly s knd tp ) ( TpPoly _ _ tp' ) = isCompatible ( extendContextWithTypeVar s (TpVar 0) knd ctx )  tp tp'
-isCompatible ctx app1 app2
-  = maybe False ( uncurry (isCompatible ctx) ) (liftA2 (,) (evalTypeApp ctx app1) (evalTypeApp ctx app2))
+isCompatible ctx app1 app2 = case liftA2 (,) (evalTypeApp ctx app1) (evalTypeApp ctx app2) of
+  Just ( tp1, tp2 ) -> if ( tp1 /= app1 ) || ( tp2 /= app2 )
+    then isCompatible ctx tp1 tp2
+    else False
+  Nothing -> False
 
 
 kindOf :: Type -> Maybe Kind
@@ -111,13 +114,14 @@ typeof ctx ( TmApp tm1 tm2 ) = case typeof ctx tm1 of
             _ -> Left $ errorConstructor BadRightType [tp1, tp2]
           _ -> Left $ errorConstructor CouldNotEvalType [tp]
         _ -> Left $ errorConstructor CouldNotEvalType [tpApp]
---        Just ( TpArrow tpArg tpRes ) -> if isCompatible tpArg tp2
+--        Just ( TpArrow tpArg tpRes ) -> if isCompatible ctx tpArg tp2
 --          then Right tpRes
 --          else Left $ errorConstructor TypesNotEq [tp1, tp2]
 --        Just ( TpPoly _ knd tpTail ) -> case tm2 of
 --          TmType tp3 -> case ( == knd ) <$> kindOf tp3 of
 --            Just True -> Right $ shiftType0 ( -1 ) $ substType tpTail 0 ( shiftType0 1 tp3 )
---            _ -> Left $ errorConstructor TypesNotEq [tp1, tp2]
+--            Just False -> Left $ errorConstructor TypesNotEq [tp1, tp2]
+--            Nothing -> Left $ errorConstructor KindsNotEq [tp1, tp2]
 --          _ -> Left $ errorConstructor BadRightType [tp1, tp2]
 --        Just tp -> Left $ errorConstructor CouldNotEvalType [tp]
 --        _ -> Left $ errorConstructor CouldNotEvalType [tp1, tp2]

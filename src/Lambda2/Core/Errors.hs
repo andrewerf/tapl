@@ -25,6 +25,7 @@ data ErrorKind =
   BadLeftType |
   BadRightType |
   TypesNotEq |
+  KindsNotEq |
   NotAType |
   CouldNotEvalType
 
