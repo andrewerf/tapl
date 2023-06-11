@@ -45,6 +45,8 @@ library:
   build-tools:
     - alex
     - happy
+  ghc-options:
+    - -stubdir C
 
 executables:
   tapl-exe:
