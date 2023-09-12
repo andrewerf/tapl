@@ -69,11 +69,17 @@ data FuncState = FuncState {
 
 zeroFuncState :: FuncState
 zeroFuncState = FuncState {
-    funcName = "main",
+    funcName = "fun",
     funcRet = TpVoid,
     funcArgs = [],
     funcInstructions = [],
     funcTemporariesCounter = 0
+  }
+
+mainFuncState :: FuncState
+mainFuncState = zeroFuncState{
+    funcName = "main",
+    funcRet = TpIn32
   }
 
 data ModuleState = ModuleState {
@@ -86,8 +92,8 @@ data ModuleState = ModuleState {
 zeroModuleState :: ModuleState
 zeroModuleState = ModuleState {
     moduleCurrentFunc = 0,
-    moduleFuncs = [zeroFuncState],
-    moduleClTypes = []
+    moduleFuncs = [mainFuncState],
+    moduleClTypes = [ClosureType{ closFunc=mainFuncState, closName="main_cl", closStack=[(0, TpPtr), (1, TpPtr)]}]
   }
 
 type Module a = State ModuleState a
@@ -95,7 +101,7 @@ type Module a = State ModuleState a
 
 name2code :: Name -> String
 name2code ( Name s ) = s
-name2code ( UnName i ) = show i
+name2code ( UnName i ) = "a" <> show i
 
 type2code :: Type -> String
 type2code TpVoid = "void"
@@ -133,7 +139,7 @@ op2codeWithType ( OpConstant c ) = constant2codeWithType c
 
 instr2code :: Instr -> String
 instr2code ( Call tp f args ) = "call " <> type2code tp <> " " <> op2code f <> " (" <> intercalate ", " ( map op2codeWithType args ) <> ")"
-instr2code ( Ret op ) = "ret " <> op2code op
+instr2code ( Ret op ) = "ret " <> op2codeWithType op
 instr2code RetVoid = "ret void"
 instr2code ( Assign op instr ) = op2code op <> " = " <> instr2code instr
 instr2code ( Load tp op ) = "load " <> type2code tp <> ", " <> op2codeWithType op
@@ -144,7 +150,7 @@ instr2code ( Gep tp ops ) = "getelementptr " <> type2code tp <> ", " <> intercal
 
 funcState2code :: FuncState -> String
 funcState2code FuncState{..} =
-  "define " <> type2code funcRet <> " @" <> funcName <> "(" <> intercalate ", " ( map ( \(t, i) -> type2code t <> " %" <> show i ) ( zip funcArgs [0..length funcArgs] ) ) <> "){\n"
+  "define " <> type2code funcRet <> " @" <> funcName <> "(" <> intercalate ", " ( map ( \(t, i) -> type2code t <> " %a" <> show i ) ( zip funcArgs $ reverse [0..length funcArgs - 1] ) ) <> "){\n"
     <> "    " <> intercalate "\n    " ( map instr2code funcInstructions )
     <> "\n}\n"
 
@@ -231,6 +237,15 @@ getOpType ( OpConstant ( ConstInt32 _ ) ) = TpIn32
 getOpType ( OpConstant ( ConstIntrinsic tp _ ) ) = tp
 
 
+fnName2clName :: String -> String
+fnName2clName "main" = "main_cl"
+fnName2clName s = reverse . drop 4 . reverse $ s
+
+
+zipWithLength :: [a] -> [(a, Int)]
+zipWithLength lst = zip lst $ [0..length lst]
+
+
 getArgOrClVar :: Int -> Type -> Module Op
 getArgOrClVar x tp = do
   currentFunc <- getCurrentFunc
@@ -242,11 +257,15 @@ getArgOrClVar x tp = do
      t_adr <- getTemporaryName
      let t_adr_op = OpLocalRef TpPtr t_adr
 
-     let cl_name = Name $ reverse . drop 4 . reverse $ fn_name
+     let cl_name = Name $ fnName2clName fn_name
      let cltp = TpStruct cl_name
      let cl = OpGlobalRef TpPtr cl_name
+     n <- ( snd . justOrErr . find ( ( == x ) . fst . fst ) . zipWithLength . closStack
+            . head . filter ( \c -> ( funcName . closFunc $ c ) == fn_name ) )
+              <$> gets moduleClTypes
 
-     emit $ Assign t_adr_op ( Gep cltp [cl, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 ( 1 + x - argsCount )] )
+
+     emit $ Assign t_adr_op ( Gep cltp [cl, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 ( 1 + n )] )
      t <- getTemporaryName
      let t_op = OpLocalRef tp t
      emit $ Assign t_op ( Load tp t_adr_op )
@@ -264,13 +283,14 @@ initClosure cl@ClosureType{..} = do
   where
   cl_type_name = getClosureTypeName cl
   cl_type = TpStruct cl_type_name
+  argsCount = length . funcArgs $ closFunc
 
   f :: Op -> ( ( Int, Type ), Int ) -> Module ()
   f cl_ptr_op ( ( var, tp ), i ) = do
     t_adr <- getTemporaryName
     let t_adr_op = OpLocalRef TpPtr t_adr
     emit $ Assign t_adr_op ( Gep cl_type [cl_ptr_op, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 i] )
-    src_op <- getArgOrClVar var tp
+    src_op <- getArgOrClVar ( var - argsCount ) tp
     emit $ Store src_op t_adr_op
 
 callClosure :: Op -> [Op] -> Module ()
@@ -295,19 +315,19 @@ cpsVar2Op ( TmcGlobalVar nm tp ) = return $ OpGlobalRef ( cpsType2Type tp ) $ Na
 cpsVar2Op ( TmcConst x _ ) = return $ OpConstant ( ConstInt8 x )
 cpsVar2Op tm = error $ "Called cpsVar2Op on a non-var term: " <> show tm
 
-compileCps :: TermCps -> Module ()
-compileCps ( TmcApp t1 t2 ) = do
+compileCps :: Int -> TermCps -> Module ()
+compileCps _ ( TmcApp t1 t2 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
   callClosure f [x]
 
-compileCps ( TmcApp2 t1 t2 t3 ) = do
+compileCps _ ( TmcApp2 t1 t2 t3 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
   y <- cpsVar2Op t3
   callClosure f [x, y]
 
-compileCps ( TmcLet name argsTps body fts next ) = do
+compileCps depth ( TmcLet name argsTps body fts next ) = do
   let args = map cpsType2Type argsTps
 
   let newFunc = zeroFuncState{
@@ -327,13 +347,18 @@ compileCps ( TmcLet name argsTps body fts next ) = do
                         -- This calls initializes (copies from the scope) such an object for the just emitted closure type
 
   setCurrentFunc newFuncNum  -- set current function to just emitted one
-  compileCps body
+  compileCps ( depth + 1 ) body
   emit RetVoid
   setCurrentFunc initialFunc -- get back to the initial function
-  compileCps next
+  compileCps depth next
 
-compileCps tm = error $ "compileCps invoked with wrong input: " <> show tm
+compileCps _ tm = error $ "compileCps invoked with wrong input: " <> show tm
 
+
+compileCps0 :: TermCps -> Module ()
+compileCps0 tm = do
+  compileCps 0 tm
+  emit $ Ret ( OpConstant $ ConstInt32 0 )
 
 ---
 
@@ -411,10 +436,10 @@ term2cps ctx ( L.TmVar ( L.DataVar ( L.TdInt x ) ) ) = return $ TmcApp ( TmcVar 
 
 term2cps ctx ( L.TmAbs varName varType ( L.TailAbs tl ) ) = do
   let extendedContext = L.extendContextWithVar varName varType ctx
-  let fv = fv2cps extendedContext tl
+  let fv = map ( \(i, t) -> (i + 1, t) ) $ fv2cps extendedContext tl -- compensate for the shift
   f <- freshFunc "v"
   t <- term2cps extendedContext $ L.shift0 1 tl
-  return $ TmcLet f [TcPtr, type2cps varType] t fv ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
+  return $ TmcLet f [type2cps varType, TcPtr] t fv ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
 
 term2cps ctx tm@( L.TmApp f x ) = do
   let x_type = type2cps $
@@ -438,11 +463,11 @@ term2cps ctx tm@( L.TmApp f x ) = do
     TmcLet u [TcPtr] f_cps f_fv (
         TmcLet c1 [TcPtr] (
             TmcLet g [TcPtr] x_cps x_fv (
-              TmcLet c2 [x_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 2 TcPtr ) ( TmcVar 0 x_type ) ) [(0, TcPtr), (1, TcPtr)]
+              TmcLet c2 [x_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 0 x_type ) ( TmcVar 2 TcPtr )  ) [(1, TcPtr), (2, TcPtr)]
                 ( TmcApp ( TmcGlobalVar g TcPtr ) ( TmcGlobalVar c2 TcPtr ) )
             )
         )
-        ( filter ( ( > 0 ) . fst ) . map ( \(i, tp) -> ( i - 1, tp ) ) $ x_fv )
+        ( [(1, TcPtr)] ++ ( filter ( ( >= 0 ) . fst ) . map ( \(i, tp) -> ( i - 1, tp ) ) $ x_fv ) )
         ( TmcApp ( TmcGlobalVar u TcPtr ) ( TmcGlobalVar c1 TcPtr ) )
      )
 
@@ -452,13 +477,18 @@ term2cps _ tm = error $ "Unsupported term " <> show tm
 
 exampleContext = L.extendContextWithTypeVar "Int" ( L.TpVar 0 ) L.KndStar mempty
 --example = L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) )
-example = L.TmApp
-            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) )
-            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) )
-
+--example = L.TmApp
+--            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) )
+--            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) )
+--example = L.TmApp ( L.TmApp
+--            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) ) ) )
+--            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) )
+example = L.TmApp ( L.TmApp ( L.TmApp
+            ( L.TmAbs "z" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 1 ) ) ) ) ) ) ) )
+            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 99 ) ) )
 
 test :: (TermCps, FreshNameProviderState)
 test = runState ( term2cps exampleContext example ) emptyFreshNameProviderState
 
 compiledTest :: ( (), ModuleState )
-compiledTest = runState ( compileCps $ fst test ) zeroModuleState
+compiledTest = runState ( compileCps0 $ fst test ) zeroModuleState
