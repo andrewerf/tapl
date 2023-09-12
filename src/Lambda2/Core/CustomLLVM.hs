@@ -21,12 +21,13 @@ data Type
   | TpIn32
   | TpPtr
   | TpVoid
+  | TpStruct Name
   deriving (Eq, Show)
 
 data Constant
   = ConstInt8 Int
   | ConstInt32 Int
-  | ConstIntrinsic String
+  | ConstIntrinsic Type String
   deriving (Eq, Show)
 
 data Op
@@ -40,14 +41,20 @@ data Instr
       Type  -- return type
       Op    -- func
       [Op]  -- args
+  | Assign Op Instr
+  | Gep Type [Op]
+  | Load Type Op
+  | Store Op Op
+  | Alloca Type
   | Ret Op
   | RetVoid
   deriving (Eq, Show)
 
 
-data Closure = Closure {
-    func :: Op,
-    capt :: Op
+data ClosureType = ClosureType {
+    closName :: String,
+    closFunc :: FuncState,
+    closStack :: [(Int, Type)]
   }
   deriving (Eq, Show)
 
@@ -55,28 +62,32 @@ data FuncState = FuncState {
     funcName :: String,           -- Function name
     funcRet :: Type,              -- Return type
     funcArgs :: [Type],           -- Arg types
-    funcInstructions :: [Instr]   -- All the instructions inside the block
+    funcInstructions :: [Instr],  -- All the instructions inside the block
+    funcTemporariesCounter :: Int -- Number of temporaries used
   }
   deriving (Eq, Show)
 
 zeroFuncState :: FuncState
 zeroFuncState = FuncState {
-    funcName = "func_name",
+    funcName = "main",
     funcRet = TpVoid,
     funcArgs = [],
-    funcInstructions = []
+    funcInstructions = [],
+    funcTemporariesCounter = 0
   }
 
 data ModuleState = ModuleState {
     moduleCurrentFunc :: Int,         -- Current function
-    moduleFuncs :: [FuncState]        -- All the function in the module
+    moduleFuncs :: [FuncState],       -- All the function in the module
+    moduleClTypes :: [ClosureType]    -- All the closures' types in the module
   }
   deriving (Eq, Show)
 
 zeroModuleState :: ModuleState
 zeroModuleState = ModuleState {
     moduleCurrentFunc = 0,
-    moduleFuncs = [zeroFuncState]
+    moduleFuncs = [zeroFuncState],
+    moduleClTypes = []
   }
 
 type Module a = State ModuleState a
@@ -91,16 +102,24 @@ type2code TpVoid = "void"
 type2code TpInt8 = "i8"
 type2code TpIn32 = "i32"
 type2code TpPtr = "ptr"
+type2code ( TpStruct s ) = "%struct." <> name2code s
+
+type2defaultValue :: Type -> Op
+type2defaultValue TpVoid = OpConstant $ ConstIntrinsic TpVoid "void"
+type2defaultValue TpInt8 = OpConstant $ ConstInt8 0
+type2defaultValue TpIn32 = OpConstant $ ConstInt32 0
+type2defaultValue TpPtr = OpConstant $ ConstIntrinsic TpPtr "null"
+type2defaultValue tp = error $ "Could not get default value for " <> show tp
 
 constant2code :: Constant -> String
 constant2code ( ConstInt8 x ) = show x
 constant2code ( ConstInt32 x ) = show x
-constant2code ( ConstIntrinsic s ) = show s
+constant2code ( ConstIntrinsic _ s ) = s
 
 constant2codeWithType :: Constant -> String
 constant2codeWithType ( ConstInt8 x ) = "i8 " <> show x
 constant2codeWithType ( ConstInt32 x ) = "i32 " <> show x
-constant2codeWithType ( ConstIntrinsic s ) = s
+constant2codeWithType ( ConstIntrinsic tp s ) = type2code tp <> " " <> s
 
 op2code :: Op -> String
 op2code ( OpLocalRef _ nm ) = "%" <> name2code nm
@@ -116,16 +135,33 @@ instr2code :: Instr -> String
 instr2code ( Call tp f args ) = "call " <> type2code tp <> " " <> op2code f <> " (" <> intercalate ", " ( map op2codeWithType args ) <> ")"
 instr2code ( Ret op ) = "ret " <> op2code op
 instr2code RetVoid = "ret void"
+instr2code ( Assign op instr ) = op2code op <> " = " <> instr2code instr
+instr2code ( Load tp op ) = "load " <> type2code tp <> ", " <> op2codeWithType op
+instr2code ( Store op1 op2 ) = "store " <> op2codeWithType op1 <> ", " <> op2codeWithType op2
+instr2code ( Alloca tp ) = "alloca " <> type2code tp
+instr2code ( Gep tp ops ) = "getelementptr " <> type2code tp <> ", " <> intercalate ", " ( map op2codeWithType ops )
 
 
 funcState2code :: FuncState -> String
 funcState2code FuncState{..} =
   "define " <> type2code funcRet <> " @" <> funcName <> "(" <> intercalate ", " ( map ( \(t, i) -> type2code t <> " %" <> show i ) ( zip funcArgs [0..length funcArgs] ) ) <> "){\n"
-    <> "\t" <> intercalate "\n\t" ( map instr2code funcInstructions )
+    <> "    " <> intercalate "\n    " ( map instr2code funcInstructions )
     <> "\n}\n"
 
+cl2code :: ClosureType -> String
+cl2code ClosureType{..} =
+  let name = Name closName in
+  let tp = TpStruct name in
+  let fn = OpGlobalRef TpPtr $ Name ( closName <> "_fun" ) in
+  let stackTypes = TpPtr : map snd closStack in
+  let stack = fn : map ( \(_, t) -> type2defaultValue t ) closStack in
+  type2code tp <> " = type {" <> intercalate ", " ( map type2code stackTypes ) <> "}\n" <>
+  op2code ( OpGlobalRef tp name ) <> " = global " <> type2code tp <> " {" <>
+    intercalate ", " ( map op2codeWithType stack ) <> "}"
+
+
 state2code :: ModuleState -> String
-state2code ModuleState{ moduleFuncs=moduleFuncs } = intercalate "\n\n" $ map funcState2code moduleFuncs
+state2code ModuleState{..} = intercalate "\n\n" $ map cl2code moduleClTypes ++ map funcState2code moduleFuncs
 
 
 
@@ -153,10 +189,100 @@ emitFunc fn = do
   put s{ moduleFuncs = moduleFuncs s ++ [fn] }
   return n
 
+emitCl :: ClosureType -> Module ()
+emitCl cl = do
+  s <- get
+  put s{ moduleClTypes = moduleClTypes s ++ [cl] }
+
 setCurrentFunc :: Int -> Module ()
 setCurrentFunc k = do
   s <- get
   put s{ moduleCurrentFunc = k }
+
+getCurrentFunc :: Module FuncState
+getCurrentFunc = do
+  k <- gets moduleCurrentFunc
+  funcs <- gets moduleFuncs
+  return $ funcs !! k
+
+getTemporaryName :: Module Name
+getTemporaryName = do
+  f <- getCurrentFunc
+  let i = funcTemporariesCounter f
+  -- modify temporaries counter
+  k <- gets moduleCurrentFunc
+  s <- get
+  let newCurrentFunc = f{funcTemporariesCounter = i + 1}
+  put s{moduleFuncs = replaceIndex ( moduleFuncs s ) k newCurrentFunc}
+  --
+  return . Name $ "t" <> show i
+
+getClosureTypeName :: ClosureType -> Name
+getClosureTypeName ClosureType{..} = Name closName
+
+getCallableType :: Type
+getCallableType = TpStruct $ Name "callable"
+
+getOpType :: Op -> Type
+getOpType ( OpGlobalRef tp _ ) = tp
+getOpType ( OpLocalRef tp _ ) = tp
+getOpType ( OpConstant ( ConstInt8 _ ) ) = TpInt8
+getOpType ( OpConstant ( ConstInt32 _ ) ) = TpIn32
+getOpType ( OpConstant ( ConstIntrinsic tp _ ) ) = tp
+
+
+getArgOrClVar :: Int -> Type -> Module Op
+getArgOrClVar x tp = do
+  currentFunc <- getCurrentFunc
+  let fn_name = funcName currentFunc
+  let argsCount = length ( funcArgs currentFunc )
+  if x < argsCount then
+     return $ OpLocalRef tp $ UnName x
+   else do
+     t_adr <- getTemporaryName
+     let t_adr_op = OpLocalRef TpPtr t_adr
+
+     let cl_name = Name $ reverse . drop 4 . reverse $ fn_name
+     let cltp = TpStruct cl_name
+     let cl = OpGlobalRef TpPtr cl_name
+
+     emit $ Assign t_adr_op ( Gep cltp [cl, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 ( 1 + x - argsCount )] )
+     t <- getTemporaryName
+     let t_op = OpLocalRef tp t
+     emit $ Assign t_op ( Load tp t_adr_op )
+     return t_op
+
+
+initClosure :: ClosureType -> Module ()
+initClosure cl@ClosureType{..} = do
+  -- cl_ptr corresponds to the function name
+  let cl_ptr = Name closName
+  let cl_ptr_op = OpGlobalRef TpPtr cl_ptr
+  --
+  -- copy each variable from the local "scope"
+  mapM_ ( f cl_ptr_op ) ( zip closStack [1..length closStack + 1] )
+  where
+  cl_type_name = getClosureTypeName cl
+  cl_type = TpStruct cl_type_name
+
+  f :: Op -> ( ( Int, Type ), Int ) -> Module ()
+  f cl_ptr_op ( ( var, tp ), i ) = do
+    t_adr <- getTemporaryName
+    let t_adr_op = OpLocalRef TpPtr t_adr
+    emit $ Assign t_adr_op ( Gep cl_type [cl_ptr_op, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 i] )
+    src_op <- getArgOrClVar var tp
+    emit $ Store src_op t_adr_op
+
+callClosure :: Op -> [Op] -> Module ()
+callClosure cl args = do
+  -- To call a closure, we need to extract the function ptr (first struct member) from it, and call this function
+  f_adr <- getTemporaryName
+  let f_adr_op = OpLocalRef TpPtr f_adr
+  emit $ Assign f_adr_op ( Gep getCallableType [cl, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 0] )
+  f <- getTemporaryName
+  let f_op = OpLocalRef TpPtr f
+  emit $ Assign f_op ( Load TpPtr f_adr_op )
+  emit $ Call TpVoid f_op args
 
 
 cpsType2Type :: TypeCps -> Type
@@ -164,7 +290,7 @@ cpsType2Type TcInt = TpInt8
 cpsType2Type TcPtr = TpPtr
 
 cpsVar2Op :: TermCps -> Module Op
-cpsVar2Op ( TmcVar x tp ) = return $ OpLocalRef ( cpsType2Type tp ) $ UnName x
+cpsVar2Op ( TmcVar x tpCps ) = getArgOrClVar x ( cpsType2Type tpCps )
 cpsVar2Op ( TmcGlobalVar nm tp ) = return $ OpGlobalRef ( cpsType2Type tp ) $ Name nm
 cpsVar2Op ( TmcConst x _ ) = return $ OpConstant ( ConstInt8 x )
 cpsVar2Op tm = error $ "Called cpsVar2Op on a non-var term: " <> show tm
@@ -173,23 +299,34 @@ compileCps :: TermCps -> Module ()
 compileCps ( TmcApp t1 t2 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
-  emit ( Call TpVoid f [x] )
+  callClosure f [x]
 
 compileCps ( TmcApp2 t1 t2 t3 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
   y <- cpsVar2Op t3
-  emit ( Call TpVoid f [x, y] )
+  callClosure f [x, y]
 
-compileCps ( TmcLet name argsTps body next ) = do
+compileCps ( TmcLet name argsTps body fts next ) = do
   let args = map cpsType2Type argsTps
-  initialFunc <- gets moduleCurrentFunc -- remember the func we are currently in
 
-  newFunc <- emitFunc zeroFuncState{ -- emit a new function
-      funcName = name,
+  let newFunc = zeroFuncState{
+      funcName = name <> "_fun",
       funcArgs = args
     }
-  setCurrentFunc newFunc  -- and set just emmited function to current
+  let newClType = ClosureType{
+      closName = name,
+      closFunc = newFunc,
+      closStack = zip ( map fst fts ) ( map ( cpsType2Type . snd ) fts )
+    }
+
+  initialFunc <- gets moduleCurrentFunc -- remember the func we are currently in
+  newFuncNum <- emitFunc newFunc -- emit a new function
+  emitCl newClType -- and its closure
+  initClosure newClType -- Closures are unique global objects.
+                        -- This calls initializes (copies from the scope) such an object for the just emitted closure type
+
+  setCurrentFunc newFuncNum  -- set current function to just emitted one
   compileCps body
   emit RetVoid
   setCurrentFunc initialFunc -- get back to the initial function
@@ -217,6 +354,7 @@ data TermCps
       String    -- name
       [TypeCps] -- arg types
       TermCps   -- body
+      [(Int, TypeCps)] -- indices and types of all free variables in body
       TermCps   -- next (only this is placed to local block)
   deriving ( Eq, Show )
 
@@ -248,6 +386,13 @@ freshFunc hint = do
   return name
 
 
+justOrErr :: Maybe a -> a
+justOrErr Nothing = error "justOrErr called on Nothing"
+justOrErr ( Just x ) = x
+
+fv2cps :: L.Context -> L.Term -> [(Int, TypeCps)]
+fv2cps ctx tm = justOrErr $ map ( \(i, t) -> ( i, type2cps t ) ) <$> L.fv ctx tm
+
 type2cps :: L.Type -> TypeCps
 type2cps ( L.TpVar{} ) = TcInt
 type2cps ( L.TpArrow{} ) = TcPtr
@@ -265,9 +410,11 @@ term2cps ctx ( L.TmVar ( L.BoundVar i ) ) = return $ TmcApp ( TmcVar 0 TcPtr ) (
 term2cps ctx ( L.TmVar ( L.DataVar ( L.TdInt x ) ) ) = return $ TmcApp ( TmcVar 0 TcPtr ) ( TmcConst x TcInt )
 
 term2cps ctx ( L.TmAbs varName varType ( L.TailAbs tl ) ) = do
+  let extendedContext = L.extendContextWithVar varName varType ctx
+  let fv = fv2cps extendedContext tl
   f <- freshFunc "v"
-  t <- term2cps ctx $ L.shift0 1 tl
-  return $ TmcLet f [TcPtr, type2cps varType] t ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
+  t <- term2cps extendedContext $ L.shift0 1 tl
+  return $ TmcLet f [TcPtr, type2cps varType] t fv ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
 
 term2cps ctx tm@( L.TmApp f x ) = do
   let x_type = type2cps $
@@ -284,15 +431,18 @@ term2cps ctx tm@( L.TmApp f x ) = do
   c1 <- freshCont
   c2 <- freshCont
   f_cps <- term2cps ctx f
+  let f_fv = fv2cps ctx f
   x_cps <- term2cps ctx x
+  let x_fv = fv2cps ctx x
   return $
-    TmcLet u [TcPtr] f_cps (
+    TmcLet u [TcPtr] f_cps f_fv (
         TmcLet c1 [TcPtr] (
-            TmcLet g [TcPtr] x_cps (
-              TmcLet c2 [res_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 0 x_type ) ( TmcVar 2 TcInt ) )
+            TmcLet g [TcPtr] x_cps x_fv (
+              TmcLet c2 [x_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 2 TcPtr ) ( TmcVar 0 x_type ) ) [(0, TcPtr), (1, TcPtr)]
                 ( TmcApp ( TmcGlobalVar g TcPtr ) ( TmcGlobalVar c2 TcPtr ) )
             )
         )
+        ( filter ( ( > 0 ) . fst ) . map ( \(i, tp) -> ( i - 1, tp ) ) $ x_fv )
         ( TmcApp ( TmcGlobalVar u TcPtr ) ( TmcGlobalVar c1 TcPtr ) )
      )
 
