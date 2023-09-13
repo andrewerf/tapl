@@ -381,7 +381,37 @@ data TermCps
       [TypeCps] -- arg types
       TermCps   -- body
       TermCps   -- next (only this is placed to local block)
-  deriving ( Eq, Show )
+  deriving Eq
+
+
+cpsShow :: TermCps -> State String String
+cpsShow ( TmcVar x tp ) = do
+  t <- get
+  return $ t <> "TmcVar " <> show x <> " " <> show tp
+cpsShow ( TmcGlobalVar x tp ) = do
+  t <- get
+  return $ t <> "TmcGlobalVar " <> show x <> " " <> show tp
+cpsShow ( TmcConst x tp ) = do
+  t <- get
+  return $ t <> "TmcConst " <> show x <> " " <> show tp
+cpsShow ( TmcApp t1 t2 ) = do
+   t <- get
+   return $ t <> "TmcApp " <> show t1 <> " " <> show t2
+cpsShow ( TmcApp2 t1 t2 t3 ) = do
+   t <- get
+   return $ t <> "TmcApp2 " <> show t1 <> " " <> show t2 <> " " <> show t3
+cpsShow ( TmcLet name args body next ) = do
+   t <- get
+   let s = t <> "TmcLet " <> name <> " " <> show args <> "\n" <> t <> "(\n"
+   put $ t <> "\t"
+   sBody <- cpsShow body
+   sNext <- cpsShow next
+   put t
+   let ss = s <> sBody <> "\n" <> t <> ")\n" <> t <> "(\n" <> sNext <> "\n" <> t <> ")\n"
+   return ss
+
+instance Show TermCps where
+  show = fst . flip runState "" .  cpsShow
 
 
 data FreshNameProviderState = FreshNameProviderState {
@@ -435,55 +465,56 @@ fv2cps c ( TmcLet _ args body next ) = ( filterFv c . shiftFv ( -argsLength ) $ 
     filterFv :: Int -> [(Int, TypeCps)] -> [(Int, TypeCps)]
     filterFv ccc = filter ( ( >= ccc ) . fst )
 
-type2cps :: L.Type -> TypeCps
-type2cps ( L.TpVar{} ) = TcInt
-type2cps ( L.TpArrow{} ) = TcPtr
-type2cps tp = error $ "Unsupported type: " <> show tp
+type2cps :: L.Context -> L.Type -> TypeCps
+type2cps ctx ( L.TpVar i ) =
+  let typeName = justOrErr "type2cps on TpVar" $ L.getTypeVar ctx i in
+    case typeName of
+      "Int" -> TcInt
+      s -> error $ "Type " <> s <> " is not convertible to CPS"
+type2cps _ ( L.TpArrow{} ) = TcPtr
+type2cps _ tp = error $ "Unsupported type: " <> show tp
 
 
-shiftCps :: Int -> TermCps -> TermCps
-shiftCps c ( TmcVar k tp )
+shiftCps :: Int -> Int -> TermCps -> TermCps
+shiftCps c s ( TmcVar k tp )
  | k < c = TmcVar k tp
- | otherwise = TmcVar ( k + 1 ) tp
-shiftCps _ tm@TmcGlobalVar{} = tm
-shiftCps _ tm@TmcConst{} = tm
-shiftCps c ( TmcApp f x ) = TmcApp ( shiftCps c f ) ( shiftCps c x )
-shiftCps c ( TmcApp2 f x y ) = TmcApp2 ( shiftCps c f ) ( shiftCps c x ) ( shiftCps c y )
-shiftCps c ( TmcLet name args body next ) = TmcLet name args ( shiftCps ( c + length args ) body ) ( shiftCps c next )
+ | otherwise = TmcVar ( k + s ) tp
+shiftCps _ _ tm@TmcGlobalVar{} = tm
+shiftCps _ _ tm@TmcConst{} = tm
+shiftCps c s ( TmcApp f x ) = TmcApp ( shiftCps c s f ) ( shiftCps c s x )
+shiftCps c s ( TmcApp2 f x y ) = TmcApp2 ( shiftCps c s f ) ( shiftCps c s x ) ( shiftCps c s y )
+shiftCps c s ( TmcLet name args body next ) = TmcLet name args ( shiftCps ( c + length args ) s body ) ( shiftCps c s next )
 
 
 term2cps :: L.Context -> L.Term -> FreshNameProvider TermCps
 
 term2cps ctx ( L.TmVar ( L.BoundVar i ) ) = return $ TmcApp ( TmcVar 0 TcPtr ) ( TmcVar i tp )
   where
-    tp = type2cps $ case L.getVar ctx ( i - 1 ) of
+    tp = type2cps ctx $ case L.getVar ctx i of
       Nothing -> error $ "Could not find var in context: " <> show i
       Just t -> snd t
 
 term2cps ctx ( L.TmVar ( L.DataVar ( L.TdInt x ) ) ) = return $ TmcApp ( TmcVar 0 TcPtr ) ( TmcConst x TcInt )
 
 term2cps ctx ( L.TmAbs varName varType ( L.TailAbs tl ) ) = do
-  let extendedContext = L.extendContextWithVar varName varType ctx
+  let contType = justOrErr "term2cps on TmAbs" $ L.getVarIndex ctx "Cont"
+  let extendedContext = L.extendContextWithVar "cont" ( L.TpVar ( contType + 1 ) ) $ L.extendContextWithVar varName varType ctx
   t <- term2cps extendedContext ( L.shift0 1 tl )
   f <- freshFunc "v"
-  return $ TmcLet f [type2cps varType, TcPtr] t ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
+  return $ TmcLet f [type2cps ctx varType, TcPtr] t ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
 
 term2cps ctx tm@( L.TmApp f x ) = do
-  let x_type = type2cps $
+  let x_type = type2cps ctx $
         case L.typeof ctx x of
-          Left err -> error $ show err
+          Left err -> error $ "TmApp " <> show f <> " " <> show x <> " " <> show ctx
           Right tp -> tp
-  let res_type = type2cps $
-        case L.typeof ctx tm of
-           Left err -> error $ show err
-           Right tp -> tp
 
   u <- freshFunc "u"
   g <- freshFunc "g"
   c1 <- freshCont
   c2 <- freshCont
-  f_cps <- shiftCps 1 <$> term2cps ctx f
-  x_cps <- term2cps ctx x
+  f_cps <- shiftCps 1 1 <$> term2cps ctx f
+  x_cps <- shiftCps 1 2 <$> term2cps ctx x
   return $
     TmcLet u [TcPtr] f_cps (
         TmcLet c1 [TcPtr] (
