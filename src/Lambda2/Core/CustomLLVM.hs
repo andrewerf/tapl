@@ -260,7 +260,7 @@ getArgOrClVar x tp = do
      let cl_name = Name $ fnName2clName fn_name
      let cltp = TpStruct cl_name
      let cl = OpGlobalRef TpPtr cl_name
-     n <- ( snd . justOrErr . find ( ( == x ) . fst . fst ) . zipWithLength . closStack
+     n <- ( snd . justOrErr "getArgOrClVar" . find ( ( == x ) . fst . fst ) . zipWithLength . closStack
             . head . filter ( \c -> ( funcName . closFunc $ c ) == fn_name ) )
               <$> gets moduleClTypes
 
@@ -327,8 +327,9 @@ compileCps _ ( TmcApp2 t1 t2 t3 ) = do
   y <- cpsVar2Op t3
   callClosure f [x, y]
 
-compileCps depth ( TmcLet name argsTps body fts next ) = do
+compileCps depth ( TmcLet name argsTps body next ) = do
   let args = map cpsType2Type argsTps
+  let fvs = fv2cps ( length argsTps ) body
 
   let newFunc = zeroFuncState{
       funcName = name <> "_fun",
@@ -337,7 +338,7 @@ compileCps depth ( TmcLet name argsTps body fts next ) = do
   let newClType = ClosureType{
       closName = name,
       closFunc = newFunc,
-      closStack = zip ( map fst fts ) ( map ( cpsType2Type . snd ) fts )
+      closStack = zip ( map fst fvs ) ( map ( cpsType2Type . snd ) fvs )
     }
 
   initialFunc <- gets moduleCurrentFunc -- remember the func we are currently in
@@ -379,7 +380,6 @@ data TermCps
       String    -- name
       [TypeCps] -- arg types
       TermCps   -- body
-      [(Int, TypeCps)] -- indices and types of all free variables in body
       TermCps   -- next (only this is placed to local block)
   deriving ( Eq, Show )
 
@@ -405,23 +405,51 @@ freshCont = do
 freshFunc :: String -> FreshNameProvider String
 freshFunc hint = do
   s <- get
-  let name = hint <> show ( contCounter s )
-  let newS = s{ contCounter = contCounter s + 1 }
+  let name = hint <> show ( funcCounter s )
+  let newS = s{ funcCounter = funcCounter s + 1 }
   put newS
   return name
 
 
-justOrErr :: Maybe a -> a
-justOrErr Nothing = error "justOrErr called on Nothing"
-justOrErr ( Just x ) = x
+justOrErr :: String -> Maybe a -> a
+justOrErr comment Nothing = error $ "justOrErr called on Nothing, " <> comment
+justOrErr _ ( Just x ) = x
 
-fv2cps :: L.Context -> L.Term -> [(Int, TypeCps)]
-fv2cps ctx tm = justOrErr $ map ( \(i, t) -> ( i, type2cps t ) ) <$> L.fv ctx tm
+--fv2cps :: L.Context -> L.Term -> [(Int, TypeCps)]
+--fv2cps ctx tm = justOrErr "fv2cps" $ map ( \(i, t) -> ( i, type2cps t ) ) <$> ( trace ( "tm: " <> show tm <> " ctx: " <> show ctx ) $  L.fv ctx tm )
+
+fv2cps :: Int ->  TermCps -> [(Int, TypeCps)]
+fv2cps c ( TmcVar k tp )
+ | k < c = []
+ | otherwise = [(k, tp)]
+fv2cps _ TmcGlobalVar{} = []
+fv2cps _ TmcConst{} = []
+fv2cps c ( TmcApp f x ) = fv2cps c f ++ fv2cps c x
+fv2cps c ( TmcApp2 f x y ) = fv2cps c f ++ fv2cps c x ++ fv2cps c y
+fv2cps c ( TmcLet _ args body next ) = ( filterFv c . shiftFv ( -argsLength ) $ fv2cps ( c + argsLength ) body ) ++ fv2cps c next
+  where
+    argsLength = length args
+    shiftFv :: Int -> [(Int, TypeCps)] -> [(Int, TypeCps)]
+    shiftFv x = map ( \(i, t) -> (i + x, t) )
+
+    filterFv :: Int -> [(Int, TypeCps)] -> [(Int, TypeCps)]
+    filterFv ccc = filter ( ( >= ccc ) . fst )
 
 type2cps :: L.Type -> TypeCps
 type2cps ( L.TpVar{} ) = TcInt
 type2cps ( L.TpArrow{} ) = TcPtr
-type2cps _ = error "Unsupported type"
+type2cps tp = error $ "Unsupported type: " <> show tp
+
+
+shiftCps :: Int -> TermCps -> TermCps
+shiftCps c ( TmcVar k tp )
+ | k < c = TmcVar k tp
+ | otherwise = TmcVar ( k + 1 ) tp
+shiftCps _ tm@TmcGlobalVar{} = tm
+shiftCps _ tm@TmcConst{} = tm
+shiftCps c ( TmcApp f x ) = TmcApp ( shiftCps c f ) ( shiftCps c x )
+shiftCps c ( TmcApp2 f x y ) = TmcApp2 ( shiftCps c f ) ( shiftCps c x ) ( shiftCps c y )
+shiftCps c ( TmcLet name args body next ) = TmcLet name args ( shiftCps ( c + length args ) body ) ( shiftCps c next )
 
 
 term2cps :: L.Context -> L.Term -> FreshNameProvider TermCps
@@ -436,10 +464,9 @@ term2cps ctx ( L.TmVar ( L.DataVar ( L.TdInt x ) ) ) = return $ TmcApp ( TmcVar 
 
 term2cps ctx ( L.TmAbs varName varType ( L.TailAbs tl ) ) = do
   let extendedContext = L.extendContextWithVar varName varType ctx
-  let fv = map ( \(i, t) -> (i + 1, t) ) $ fv2cps extendedContext tl -- compensate for the shift
+  t <- term2cps extendedContext ( L.shift0 1 tl )
   f <- freshFunc "v"
-  t <- term2cps extendedContext $ L.shift0 1 tl
-  return $ TmcLet f [type2cps varType, TcPtr] t fv ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
+  return $ TmcLet f [type2cps varType, TcPtr] t ( TmcApp ( TmcVar 0 TcPtr ) ( TmcGlobalVar f TcPtr ) )
 
 term2cps ctx tm@( L.TmApp f x ) = do
   let x_type = type2cps $
@@ -455,19 +482,16 @@ term2cps ctx tm@( L.TmApp f x ) = do
   g <- freshFunc "g"
   c1 <- freshCont
   c2 <- freshCont
-  f_cps <- term2cps ctx f
-  let f_fv = fv2cps ctx f
+  f_cps <- shiftCps 1 <$> term2cps ctx f
   x_cps <- term2cps ctx x
-  let x_fv = fv2cps ctx x
   return $
-    TmcLet u [TcPtr] f_cps f_fv (
+    TmcLet u [TcPtr] f_cps (
         TmcLet c1 [TcPtr] (
-            TmcLet g [TcPtr] x_cps x_fv (
-              TmcLet c2 [x_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 0 x_type ) ( TmcVar 2 TcPtr )  ) [(1, TcPtr), (2, TcPtr)]
+            TmcLet g [TcPtr] x_cps (
+              TmcLet c2 [x_type] ( TmcApp2 ( TmcVar 1 TcPtr ) ( TmcVar 0 x_type ) ( TmcVar 2 TcPtr )  )
                 ( TmcApp ( TmcGlobalVar g TcPtr ) ( TmcGlobalVar c2 TcPtr ) )
             )
         )
-        ( [(1, TcPtr)] ++ ( filter ( ( >= 0 ) . fst ) . map ( \(i, tp) -> ( i - 1, tp ) ) $ x_fv ) )
         ( TmcApp ( TmcGlobalVar u TcPtr ) ( TmcGlobalVar c1 TcPtr ) )
      )
 
