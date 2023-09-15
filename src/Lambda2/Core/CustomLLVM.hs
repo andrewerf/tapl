@@ -1,4 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Lambda2.Core.CustomLLVM where
 
@@ -7,6 +9,8 @@ import Control.Monad.State
 
 import qualified Lambda2.Core.AST as L
 import qualified Lambda2.Core.Typing as L
+
+import Text.RawString.QQ
 
 import Debug.Trace
 
@@ -51,10 +55,28 @@ data Instr
   deriving (Eq, Show)
 
 
+data VarWithType = VarWithType Int Type | VarWithTypeWithDefault Int Type Constant
+  deriving ( Eq, Show )
+  
+toList :: [VarWithType] -> [(Int, Type)]
+toList = map $ \case
+  VarWithType i tp -> ( i, tp )
+  VarWithTypeWithDefault i tp _ -> ( i, tp )
+  
+fromList :: [(Int, Type)] -> [VarWithType]
+fromList = map $ \(i, tp) -> VarWithType i tp
+
+getTypes :: [VarWithType] -> [Type]
+getTypes = map snd . toList
+  
+getVars :: [VarWithType] -> [Int]
+getVars = map fst . toList
+
+
 data ClosureType = ClosureType {
     closName :: String,
     closFunc :: FuncState,
-    closStack :: [(Int, Type)]      -- free variables that are used in closFunc (relative)
+    closStack :: [VarWithType]      -- free variables that are used in closFunc (relative)
   }
   deriving (Eq, Show)
 
@@ -93,7 +115,7 @@ zeroModuleState :: ModuleState
 zeroModuleState = ModuleState {
     moduleCurrentFunc = 0,
     moduleFuncs = [mainFuncState],
-    moduleClTypes = [ClosureType{ closFunc=mainFuncState, closName="main_cl", closStack=[(0, TpPtr), (1, TpPtr)]}]
+    moduleClTypes = [ClosureType{ closFunc=mainFuncState, closName="main_cl", closStack=[VarWithTypeWithDefault 0 TpPtr ( ConstIntrinsic TpPtr "@print" )]}]
   }
 
 type Module a = State ModuleState a
@@ -158,16 +180,34 @@ cl2code :: ClosureType -> String
 cl2code ClosureType{..} =
   let name = Name closName in
   let tp = TpStruct name in
-  let fn = OpGlobalRef TpPtr $ Name ( closName <> "_fun" ) in
-  let stackTypes = TpPtr : map snd closStack in
-  let stack = fn : map ( \(_, t) -> type2defaultValue t ) closStack in
+  let fn = OpGlobalRef TpPtr $ Name ( clName2fnName closName ) in
+  let stackTypes = TpPtr : getTypes closStack in
+  let stack = fn : map ( \case 
+       VarWithType _ a -> type2defaultValue a
+       VarWithTypeWithDefault _ _ a -> OpConstant a ) closStack in
   type2code tp <> " = type {" <> intercalate ", " ( map type2code stackTypes ) <> "}\n" <>
   op2code ( OpGlobalRef tp name ) <> " = global " <> type2code tp <> " {" <>
     intercalate ", " ( map op2codeWithType stack ) <> "}"
 
 
 state2code :: ModuleState -> String
-state2code ModuleState{..} = intercalate "\n\n" $ map cl2code moduleClTypes ++ map funcState2code moduleFuncs
+state2code ModuleState{..} =
+  ( [r|
+
+%struct.callable = type {ptr, ptr}
+
+%struct.print = type {ptr}
+@print = global %struct.print {ptr @print_fun}
+
+@.str = private unnamed_addr constant [15 x i8] c"value is : %d\0A\00", align 1
+declare i32 @printf(i8*, ...)
+define void @print_fun(i8 %0){
+   call i32 (i8*, ...)* @printf(i8* getelementptr inbounds ([13 x i8], [15 x i8]* @.str, i32 0, i32 0), i8 %0)
+   ret void
+}
+
+|] :: String ) <>
+  ( intercalate "\n\n" $ map cl2code moduleClTypes ++ map funcState2code moduleFuncs )
 
 
 
@@ -241,6 +281,10 @@ fnName2clName :: String -> String
 fnName2clName "main" = "main_cl"
 fnName2clName s = reverse . drop 4 . reverse $ s
 
+clName2fnName :: String -> String
+clName2fnName "main_cl" = "main"
+clName2fnName s = s <> "_fun"
+
 
 zipWithLength :: [a] -> [(a, Int)]
 zipWithLength lst = zip lst $ [0..length lst]
@@ -260,7 +304,7 @@ getArgOrClVar x tp = do
      let cl_name = Name $ fnName2clName fn_name
      let cltp = TpStruct cl_name
      let cl = OpGlobalRef TpPtr cl_name
-     n <- ( snd . justOrErr "getArgOrClVar" . find ( ( == x ) . fst . fst ) . zipWithLength . closStack
+     n <- ( snd . justOrErr "getArgOrClVar" . find ( ( == x ) . fst . fst ) . zipWithLength . toList . closStack
             . head . filter ( \c -> ( funcName . closFunc $ c ) == fn_name ) )
               <$> gets moduleClTypes
 
@@ -279,7 +323,7 @@ initClosure cl@ClosureType{..} = do
   let cl_ptr_op = OpGlobalRef TpPtr cl_ptr
   --
   -- copy each variable from the local "scope"
-  mapM_ ( f cl_ptr_op ) ( zip closStack [1..length closStack + 1] )
+  mapM_ ( f cl_ptr_op ) ( zip ( toList closStack ) [1..length closStack + 1] )
   where
   cl_type_name = getClosureTypeName cl
   cl_type = TpStruct cl_type_name
@@ -332,13 +376,13 @@ compileCps depth ( TmcLet name argsTps body next ) = do
   let fvs = fv2cps ( length argsTps ) body
 
   let newFunc = zeroFuncState{
-      funcName = name <> "_fun",
+      funcName = clName2fnName name,
       funcArgs = args
     }
   let newClType = ClosureType{
       closName = name,
       closFunc = newFunc,
-      closStack = zip ( map fst fvs ) ( map ( cpsType2Type . snd ) fvs )
+      closStack = fromList $ zip ( map fst fvs ) ( map ( cpsType2Type . snd ) fvs )
     }
 
   initialFunc <- gets moduleCurrentFunc -- remember the func we are currently in
