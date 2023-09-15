@@ -54,7 +54,7 @@ data Instr
 data ClosureType = ClosureType {
     closName :: String,
     closFunc :: FuncState,
-    closStack :: [(Int, Type)]
+    closStack :: [(Int, Type)]      -- free variables that are used in closFunc (relative)
   }
   deriving (Eq, Show)
 
@@ -251,9 +251,9 @@ getArgOrClVar x tp = do
   currentFunc <- getCurrentFunc
   let fn_name = funcName currentFunc
   let argsCount = length ( funcArgs currentFunc )
-  if x < argsCount then
+  if x < argsCount then   -- if this is a bound variable, then just return a local reference
      return $ OpLocalRef tp $ UnName x
-   else do
+   else do                -- otherwise, extract the variable from current closure's stack
      t_adr <- getTemporaryName
      let t_adr_op = OpLocalRef TpPtr t_adr
 
