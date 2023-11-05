@@ -287,8 +287,7 @@ clName2fnName s = s <> "_fun"
 
 
 zipWithLength :: [a] -> [(a, Int)]
-zipWithLength lst = zip lst $ [0..length lst]
-
+zipWithLength lst = zip lst [0..length lst]
 
 getArgOrClVar :: Int -> Type -> Module Op
 getArgOrClVar x tp = do
@@ -307,7 +306,6 @@ getArgOrClVar x tp = do
      n <- ( snd . justOrErr "getArgOrClVar" . find ( ( == x ) . fst . fst ) . zipWithLength . toList . closStack
             . head . filter ( \c -> ( funcName . closFunc $ c ) == fn_name ) )
               <$> gets moduleClTypes
-
 
      emit $ Assign t_adr_op ( Gep cltp [cl, OpConstant $ ConstInt32 0, OpConstant $ ConstInt32 ( 1 + n )] )
      t <- getTemporaryName
@@ -359,19 +357,19 @@ cpsVar2Op ( TmcGlobalVar nm tp ) = return $ OpGlobalRef ( cpsType2Type tp ) $ Na
 cpsVar2Op ( TmcConst x _ ) = return $ OpConstant ( ConstInt8 x )
 cpsVar2Op tm = error $ "Called cpsVar2Op on a non-var term: " <> show tm
 
-compileCps :: Int -> TermCps -> Module ()
-compileCps _ ( TmcApp t1 t2 ) = do
+compileCps :: TermCps -> Module ()
+compileCps ( TmcApp t1 t2 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
   callClosure f [x]
 
-compileCps _ ( TmcApp2 t1 t2 t3 ) = do
+compileCps ( TmcApp2 t1 t2 t3 ) = do
   f <- cpsVar2Op t1
   x <- cpsVar2Op t2
   y <- cpsVar2Op t3
   callClosure f [x, y]
 
-compileCps depth ( TmcLet name argsTps body next ) = do
+compileCps ( TmcLet name argsTps body next ) = do
   let args = map cpsType2Type argsTps
   let fvs = fv2cps ( length argsTps ) body
 
@@ -392,17 +390,17 @@ compileCps depth ( TmcLet name argsTps body next ) = do
                         -- This calls initializes (copies from the scope) such an object for the just emitted closure type
 
   setCurrentFunc newFuncNum  -- set current function to just emitted one
-  compileCps ( depth + 1 ) body
+  compileCps body
   emit RetVoid
   setCurrentFunc initialFunc -- get back to the initial function
-  compileCps depth next
+  compileCps next
 
-compileCps _ tm = error $ "compileCps invoked with wrong input: " <> show tm
+compileCps tm = error $ "compileCps invoked with wrong input: " <> show tm
 
 
 compileCps0 :: TermCps -> Module ()
 compileCps0 tm = do
-  compileCps 0 tm
+  compileCps tm
   emit $ Ret ( OpConstant $ ConstInt32 0 )
 
 ---
@@ -574,20 +572,20 @@ term2cps _ tm = error $ "Unsupported term " <> show tm
 
 
 
-exampleContext = L.extendContextWithTypeVar "Int" ( L.TpVar 0 ) L.KndStar mempty
---example = L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) )
+--exampleContext = L.extendContextWithTypeVar "Int" ( L.TpVar 0 ) L.KndStar mempty
+----example = L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) )
 --example = L.TmApp
 --            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) )
 --            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) )
---example = L.TmApp ( L.TmApp
---            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) ) ) )
---            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) )
-example = L.TmApp ( L.TmApp ( L.TmApp
-            ( L.TmAbs "z" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 1 ) ) ) ) ) ) ) )
-            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 99 ) ) )
-
-test :: (TermCps, FreshNameProviderState)
-test = runState ( term2cps exampleContext example ) emptyFreshNameProviderState
-
-compiledTest :: ( (), ModuleState )
-compiledTest = runState ( compileCps0 $ fst test ) zeroModuleState
+----example = L.TmApp ( L.TmApp
+----            ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 0 ) ) ) ) ) )
+----            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) )
+--example = L.TmApp ( L.TmApp ( L.TmApp
+--            ( L.TmAbs "z" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "x" ( L.TpVar 0 ) ( L.TailAbs ( L.TmAbs "y" ( L.TpVar 1 ) ( L.TailAbs ( L.TmVar ( L.BoundVar 1 ) ) ) ) ) ) ) )
+--            ( L.TmVar ( L.DataVar ( L.TdInt 10 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 15 ) ) ) ) ( L.TmVar ( L.DataVar ( L.TdInt 99 ) ) )
+--
+--test :: (TermCps, FreshNameProviderState)
+--test = runState ( term2cps exampleContext example ) emptyFreshNameProviderState
+--
+--compiledTest :: ( (), ModuleState )
+--compiledTest = runState ( compileCps0 $ fst test ) zeroModuleState

@@ -27,15 +27,6 @@ subst tm@( TmType _ ) _ _ = tm
 subst ( TmPoly typeVarName knd tailTerm ) j s = TmPoly typeVarName knd ( subst tailTerm ( j + 1 ) ( shift0 1 s ) )
 
 
-substTypeInTerm :: Term -> Int -> Type -> Term
-substTypeInTerm var@( TmVar _ ) _ _ = var
-substTypeInTerm ( TmAbs varName varType ( TailAbs tailTerm ) ) j s = TmAbs varName ( substType varType j s ) $ TailAbs ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
-substTypeInTerm ( TmAbs varName varType activeAbs ) j s = TmAbs varName ( substType varType j s ) activeAbs
-substTypeInTerm ( TmApp t1 t2 ) j s = TmApp ( substTypeInTerm t1 j s ) ( substTypeInTerm t2 j s )
-substTypeInTerm ( TmType tp ) j s = TmType ( substType tp j s )
-substTypeInTerm ( TmPoly typeVarName knd tailTerm ) j s = TmPoly typeVarName knd ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
-
-
 eval1 :: Context -> Term -> Either String Term
 eval1 _ ( TmApp ( TmAbs _ _ ( TailAbs tailTerm ) ) term )
   | isval term = Right $ shift0 ( -1 ) ( subst tailTerm 0 ( shift0 1 term ) )

@@ -1,7 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Lambda2.Core.Typing
   (
+  substTypeInTerm,
   typeof,
   substType,
   kindOf
@@ -12,6 +14,24 @@ import Lambda2.Core.AST
 import Lambda2.Core.Errors
 import Lambda2.Core.BasicTypes ( getBasicType )
 import Control.Applicative (liftA2)
+
+
+
+
+--fvi :: Context -> Int -> Term -> Maybe [(Int, Type)]
+--fvi ctx o ( TmVar ( BoundVar i ) ) = if i > o
+--  then return . (i, ) . snd <$> getVar ctx i
+--  else Just []
+--fvi _ _ ( TmVar ( DataVar _ ) ) = Just []
+--fvi ctx o ( TmAbs _ _ ( TailAbs tl ) ) = fvi ctx ( o + 1 ) tl
+--fvi _ _ ( TmAbs _ _ ( ActiveAbs{} ) ) = Just []
+--fvi ctx o ( TmApp t1 t2 ) = liftA2 (++) ( fvi ctx o t1 ) ( fvi ctx o t2 )
+--fvi ctx o ( TmPoly _ _ t ) = fvi ctx ( o + 1 ) t
+--fvi ctx _ ( TmType _ ) = error "Not implemented yet"
+--
+--fv :: Context -> Term -> Maybe [(Int, Type)]
+--fv ctx = fvi ctx 0
+
 
 
 -- TODO:
@@ -31,6 +51,16 @@ substType ( TpPoly typeVarName knd tailType ) j s = TpPoly typeVarName knd ( sub
 substType ( TpAbs typeVarName knd tailType ) j s = TpAbs typeVarName knd ( substType tailType ( j + 1 ) ( shiftType0 1 s ) )
 
 substType ( TpApp tp1 tp2 ) j s = TpApp ( substType tp1 j s ) ( substType tp2 j s )
+
+
+substTypeInTerm :: Term -> Int -> Type -> Term
+substTypeInTerm var@( TmVar _ ) _ _ = var
+substTypeInTerm ( TmAbs varName varType ( TailAbs tailTerm ) ) j s = TmAbs varName ( substType varType j s ) $ TailAbs ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
+substTypeInTerm ( TmAbs varName varType activeAbs ) j s = TmAbs varName ( substType varType j s ) activeAbs
+substTypeInTerm ( TmApp t1 t2 ) j s = TmApp ( substTypeInTerm t1 j s ) ( substTypeInTerm t2 j s )
+substTypeInTerm ( TmType tp ) j s = TmType ( substType tp j s )
+substTypeInTerm ( TmPoly typeVarName knd tailTerm ) j s = TmPoly typeVarName knd ( substTypeInTerm tailTerm ( j + 1 ) ( shiftType0 1 s ) )
+
 
 
 isTypeVal :: Type -> Bool

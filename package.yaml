@@ -25,6 +25,11 @@ dependencies:
 - data-default
 - free
 - deriving-compat
+- llvm-hs-pure
+- llvm-hs
+- mtl
+- bytestring
+- raw-strings-qq
 
 ghc-options:
 - -Wall

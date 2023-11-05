@@ -1,4 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE TupleSections #-}
 module Lambda2.Lambda2
 (
 processString
@@ -22,7 +23,8 @@ processString :: Context -> String -> Either String ( Term, Type )
 processString ctx s = case ( maybeDesugared, maybeType ) of
   ( Left err, _ ) -> Left $ show err
   ( _, Left err ) -> Left err
-  ( Right term, _ ) -> liftA2 (,) ( eval ctx term ) maybeType
+--  ( Right term, _ ) -> liftA2 (,) ( eval ctx term ) maybeType
+  ( Right term, _ ) -> ( term, ) <$> maybeType
   where
     maybeDesugared = ( desugar ctx.parse ) s
     maybeType = case maybeDesugared of
